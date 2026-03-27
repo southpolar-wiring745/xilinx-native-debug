@@ -9,10 +9,7 @@ It focuses on:
 - Zynq-7000, Zynq UltraScale+, Versal, and MicroBlaze targets
 - classic native GDB, LLDB, and Mago-MI workflows where needed
 
-## VS Code name and description
-
-- Extension name: Xilinx Native Debug
-- Extension description: Xilinx and embedded native debugging for XSDB, GDB, LLDB, Zynq, ZynqMP, Versal, and MicroBlaze in VS Code
+![Image showing debug info](images/debug_info.png)
 
 ## What this extension is for
 
@@ -24,6 +21,10 @@ This extension is designed for developers debugging:
 - MicroBlaze software on FPGA designs
 - mixed FPGA + processor bring-up flows
 - remote GDB targets for embedded systems
+- integrated RAM hex editor
+- integrated COM port monitor, raw TCP monitor, telnet monitor
+
+![Image showing hex editor](images/hex_editor.png)
 
 The main Xilinx workflow is provided by the `xsdb-gdb` debugger type:
 
@@ -115,7 +116,8 @@ Use a launch configuration like this:
   "autorun": [
     "set print pretty on",
     "set confirm off",
-    "file ./build/app.elf"
+    "file ./build/app.elf",
+    "load"
   ]
 }
 ```
