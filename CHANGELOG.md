@@ -8,6 +8,39 @@ Versioning].
 [keep a changelog]: https://keepachangelog.com/en/1.0.0
 [semantic versioning]: https://semver.org/spec/v2.0.0.html
 
+## [0.28.0] - 2026-03-27
+
+### Added
+
+- **XSDB** for board initialization tasks (connect, target select, loadhw, PS init, FPGA program, reset)
+
+- **UART Serial Terminal**: Built-in serial terminal in the VS Code Terminal panel
+  using external tools (plink/picocom/minicom/screen/PowerShell). Auto-detects
+  available COM ports on Windows and `/dev/ttyUSB*`/`/dev/ttyACM*` on Linux.
+  Commands: `UART: Connect Serial Terminal`, `UART: Disconnect Serial Terminal`.
+- **Telnet Terminal**: Built-in Telnet terminal using Node.js `net.Socket` with
+  inline IAC negotiation handling. No external dependencies required.
+  Commands: `Telnet: Connect`, `Telnet: Disconnect`.
+- **Raw TCP Terminal**: Built-in plain TCP terminal for non-telnet socket
+  servers (for example lwIP TCP console endpoints on Zynq targets).
+  Commands: `TCP: Connect (Raw)`, `TCP: Disconnect (Raw)`.
+- **Quick Connect/Disconnect Buttons**: Status bar buttons for UART, Telnet,
+  and raw TCP that act as one-click toggles (connect when disconnected,
+  disconnect when connected).
+- **Hex Memory Editor**: Read/write hex memory editor webview for inspecting and
+  modifying memory during `xsdb-gdb` debug sessions. Classic hex editor layout
+  with offset, hex bytes, and ASCII columns. Click to edit, write changes back.
+  Command: `XSDB: Hex Memory Editor`.
+- **Quick Board Reset**: Status bar button and debug toolbar button for instant
+  board reset during `xsdb-gdb` sessions. Configurable default reset type.
+  Commands: `XSDB: Quick Reset`, `XSDB: Reset Processor`, `XSDB: Reset System`.
+- **Standalone XSDB Connection Manager**: Shared infrastructure for tools that
+  need XSDB access outside of debug sessions.
+- **New configuration settings** under `xilinx-debug.*` for serial, telnet,
+  hex editor, and quick reset defaults.
+
+#### For details check README_zynq.md
+
 ## Unreleased
 
 ### Added
@@ -26,6 +59,7 @@ Versioning].
   display - PR #444 ([@chenzhiy2001])
 - resolve the issue of not being able to set the GDB binary with a path on
   Windows - PR #448 ([@henryriley0])
+- add qt unit test ([@henryriley0])
 
 ## [0.27.0] - 2024-02-07
 

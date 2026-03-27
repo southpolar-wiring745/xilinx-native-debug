@@ -320,7 +320,12 @@ export class MI2 extends EventEmitter implements IBackend {
 			this.process.on("exit", () => this.emit("quit"));
 			this.process.on("error", err => this.emit("launcherror", err));
 			const promises = this.initCommands(target, cwd, true);
-			promises.push(this.sendCommand("target-select remote " + target));
+			const trimmedTarget = target.trim();
+			if (/^extended-remote\s+/i.test(trimmedTarget) || /^remote\s+/i.test(trimmedTarget)) {
+				promises.push(this.sendCommand("target-select " + trimmedTarget));
+			} else {
+				promises.push(this.sendCommand("target-select remote " + trimmedTarget));
+			}
 			promises.push(...autorun.map(value => { return this.sendUserInput(value); }));
 			Promise.all(promises).then(() => {
 				this.emit("debug-ready");

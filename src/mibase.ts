@@ -96,15 +96,24 @@ export class MI2DebugSession extends DebugSession {
 	// verifies that the specified command can be executed
 	protected checkCommand(debuggerName: string): boolean {
 		try {
-			if (process.platform === 'win32' && debuggerName.includes("\\")) {
-				// For Windows paths containing backslashes, check if the file exists directly
-				return fs.existsSync(debuggerName);
-			}
-			else {
-				const command = process.platform === 'win32' ? 'where' : 'command -v';
-				execSync(`${command} ${debuggerName}`, { stdio: 'ignore' });
+			if (process.platform === 'win32') {
+				const isPathLike =
+					systemPath.isAbsolute(debuggerName) ||
+					/^[a-zA-Z]:/.test(debuggerName) ||
+					debuggerName.includes("\\") ||
+					debuggerName.includes("/");
+
+				if (isPathLike) {
+					// For explicit paths (C:\foo\bar.exe or C:/foo/bar.exe), check file existence directly.
+					return fs.existsSync(debuggerName);
+				}
+
+				execSync(`where "${debuggerName}"`, { stdio: 'ignore' });
 				return true;
 			}
+
+			execSync(`command -v "${debuggerName}"`, { stdio: 'ignore' });
+			return true;
 		} catch (error) {
 			return false;
 		}

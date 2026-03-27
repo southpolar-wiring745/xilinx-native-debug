@@ -3,6 +3,22 @@ import * as net from "net";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { SerialTerminalProvider, SerialConfig, detectSerialPorts } from "./serial_terminal";
+import { TelnetTerminalProvider, TelnetConfig } from "./telnet_terminal";
+import { RawTcpTerminalProvider, RawTcpConfig } from "./raw_tcp_terminal";
+import { HexEditorPanel } from "./hex_editor";
+
+// Active terminal references for disconnect commands
+let activeSerialTerminal: vscode.Terminal | undefined;
+let activeSerialPty: SerialTerminalProvider | undefined;
+let activeTelnetTerminal: vscode.Terminal | undefined;
+let activeTelnetPty: TelnetTerminalProvider | undefined;
+let activeRawTcpTerminal: vscode.Terminal | undefined;
+let activeRawTcpPty: RawTcpTerminalProvider | undefined;
+let resetStatusBarItem: vscode.StatusBarItem | undefined;
+let serialStatusBarItem: vscode.StatusBarItem | undefined;
+let telnetStatusBarItem: vscode.StatusBarItem | undefined;
+let tcpStatusBarItem: vscode.StatusBarItem | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider("debugmemory", new MemoryContentProvider()));
@@ -24,6 +40,82 @@ export function activate(context: vscode.ExtensionContext) {
 		const fileName = path.basename(vscode.window.activeTextEditor.document.fileName);
 		const ext = path.extname(fileName);
 		return fileName.substring(0, fileName.length - ext.length);
+	}));
+
+	// -- XSDB commands --------------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.programFPGA", xsdbProgramFPGA));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.resetBoard", xsdbResetBoard));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.readMemory", xsdbReadMemory));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.writeMemory", xsdbWriteMemory));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.sendCommand", xsdbSendCommand));
+
+	// -- Serial Terminal ------------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.serial.connect", serialConnect));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.serial.disconnect", serialDisconnect));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.serial.toggle", serialToggle));
+
+	// -- Telnet Terminal ------------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.telnet.connect", telnetConnect));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.telnet.disconnect", telnetDisconnect));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.telnet.toggle", telnetToggle));
+
+	// -- Raw TCP Terminal -----------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.tcp.connect", rawTcpConnect));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.tcp.disconnect", rawTcpDisconnect));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.tcp.toggle", rawTcpToggle));
+
+	// -- Hex Memory Editor ----------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.hexEditor.open", () => hexEditorOpen(context)));
+
+	// -- Quick Reset Buttons --------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.quickReset", xsdbQuickReset));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.resetProcessor", () => xsdbQuickResetTyped("processor")));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.resetSystem", () => xsdbQuickResetTyped("system")));
+
+	// -- Reset Status Bar Item ------------------------------------------
+	resetStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
+	resetStatusBarItem.text = "$(debug-restart) Reset Board";
+	resetStatusBarItem.tooltip = "Quick reset the board via XSDB";
+	resetStatusBarItem.command = "code-debug.xsdb.quickReset";
+	context.subscriptions.push(resetStatusBarItem);
+
+	// -- Connection Status Bar Items ------------------------------------
+	serialStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 49);
+	serialStatusBarItem.command = "code-debug.serial.toggle";
+	context.subscriptions.push(serialStatusBarItem);
+
+	telnetStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 48);
+	telnetStatusBarItem.command = "code-debug.telnet.toggle";
+	context.subscriptions.push(telnetStatusBarItem);
+
+	tcpStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 47);
+	tcpStatusBarItem.command = "code-debug.tcp.toggle";
+	context.subscriptions.push(tcpStatusBarItem);
+
+	// Show/hide status bar item based on active debug session
+	context.subscriptions.push(vscode.debug.onDidStartDebugSession(updateResetButtonVisibility));
+	context.subscriptions.push(vscode.debug.onDidTerminateDebugSession(updateResetButtonVisibility));
+	context.subscriptions.push(vscode.debug.onDidChangeActiveDebugSession(updateResetButtonVisibility));
+	updateResetButtonVisibility();
+	updateConnectionButtons();
+
+	// Clean up terminal references when terminals are closed
+	context.subscriptions.push(vscode.window.onDidCloseTerminal((t) => {
+		if (t === activeSerialTerminal) {
+			activeSerialTerminal = undefined;
+			activeSerialPty = undefined;
+			updateConnectionButtons();
+		}
+		if (t === activeTelnetTerminal) {
+			activeTelnetTerminal = undefined;
+			activeTelnetPty = undefined;
+			updateConnectionButtons();
+		}
+		if (t === activeRawTcpTerminal) {
+			activeRawTcpTerminal = undefined;
+			activeRawTcpPty = undefined;
+			updateConnectionButtons();
+		}
 	}));
 }
 
@@ -172,4 +264,453 @@ function center(str: string, width: number): string {
 		left = !left;
 	}
 	return str;
+}
+
+// ---------------------------------------------------------------------------
+// XSDB runtime commands — communicate with the active debug session via
+// custom DAP requests handled by XSDBZynqSession.
+// ---------------------------------------------------------------------------
+
+function getActiveXsdbSession(): vscode.DebugSession | undefined {
+	const session = vscode.debug.activeDebugSession;
+	if (!session || session.type !== "xsdb-gdb") {
+		vscode.window.showErrorMessage("No active XSDB+GDB debug session");
+		return undefined;
+	}
+	return session;
+}
+
+async function xsdbProgramFPGA() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+	const files = await vscode.window.showOpenDialog({
+		canSelectMany: false,
+		filters: { "Bitstream": ["bit", "pdi"] },
+		openLabel: "Select Bitstream",
+	});
+	if (!files || files.length === 0) return;
+	try {
+		await session.customRequest("xsdb-programFPGA", { bitstreamPath: files[0].fsPath });
+		vscode.window.showInformationMessage("FPGA programmed successfully.");
+	} catch (err) {
+		vscode.window.showErrorMessage(`FPGA programming failed: ${err}`);
+	}
+}
+
+async function xsdbResetBoard() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+	const pick = await vscode.window.showQuickPick(
+		[
+			{ label: "processor", description: "Reset processor only" },
+			{ label: "system", description: "Full system reset" },
+		],
+		{ placeHolder: "Select reset type" },
+	);
+	if (!pick) return;
+	try {
+		await session.customRequest("xsdb-resetBoard", { resetType: pick.label as "processor" | "system" });
+		vscode.window.showInformationMessage(`Board reset (${pick.label}) complete.`);
+	} catch (err) {
+		vscode.window.showErrorMessage(`Board reset failed: ${err}`);
+	}
+}
+
+async function xsdbReadMemory() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+	const input = await vscode.window.showInputBox({
+		placeHolder: "0xF8000000 10",
+		prompt: "Enter address and word count (e.g. 0xF8000000 10)",
+	});
+	if (!input) return;
+	const parts = input.trim().split(/\s+/);
+	const address = parseInt(parts[0], parts[0].startsWith("0x") ? 16 : 10);
+	const count = parseInt(parts[1] || "1", 10);
+	if (isNaN(address) || isNaN(count)) {
+		vscode.window.showErrorMessage("Invalid address or count");
+		return;
+	}
+	try {
+		const result = await session.customRequest("xsdb-readMemory", { address, count });
+		// result.entries is an array of { address, value }
+		const channel = vscode.window.createOutputChannel("XSDB Memory");
+		channel.clear();
+		if (result && result.entries) {
+			for (const e of result.entries) {
+				channel.appendLine(`0x${e.address.toString(16).toUpperCase().padStart(8, '0')}: 0x${e.value.toString(16).toUpperCase().padStart(8, '0')}`);
+			}
+		}
+		channel.show();
+	} catch (err) {
+		vscode.window.showErrorMessage(`Memory read failed: ${err}`);
+	}
+}
+
+async function xsdbWriteMemory() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+	const input = await vscode.window.showInputBox({
+		placeHolder: "0xF8000000 0xDEADBEEF",
+		prompt: "Enter address and value (e.g. 0xF8000000 0xDEADBEEF)",
+	});
+	if (!input) return;
+	const parts = input.trim().split(/\s+/);
+	const address = parseInt(parts[0], parts[0].startsWith("0x") ? 16 : 10);
+	const value = parseInt(parts[1] || "0", parts[1]?.startsWith("0x") ? 16 : 10);
+	if (isNaN(address) || isNaN(value)) {
+		vscode.window.showErrorMessage("Invalid address or value");
+		return;
+	}
+	try {
+		await session.customRequest("xsdb-writeMemory", { address, value });
+		vscode.window.showInformationMessage(`Written 0x${value.toString(16)} to 0x${address.toString(16)}`);
+	} catch (err) {
+		vscode.window.showErrorMessage(`Memory write failed: ${err}`);
+	}
+}
+
+async function xsdbSendCommand() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+	const command = await vscode.window.showInputBox({
+		placeHolder: "targets",
+		prompt: "Enter XSDB command to execute",
+	});
+	if (!command) return;
+	try {
+		const result = await session.customRequest("xsdb-sendCommand", { command });
+		const channel = vscode.window.createOutputChannel("XSDB Output");
+		channel.clear();
+		channel.appendLine(`xsdb% ${command}`);
+		channel.appendLine(result?.output || "(no output)");
+		channel.show();
+	} catch (err) {
+		vscode.window.showErrorMessage(`XSDB command failed: ${err}`);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Serial Terminal commands
+// ---------------------------------------------------------------------------
+
+async function serialConnect() {
+	const config = vscode.workspace.getConfiguration("xilinx-debug");
+
+	// Detect available ports
+	const ports = await detectSerialPorts();
+	let selectedPort: string | undefined;
+	if (ports.length > 0) {
+		const defaultPort = config.get<string>("serial.defaultPort");
+		const items = ports.map(p => ({ label: p, description: p === defaultPort ? "(default)" : "" }));
+		const pick = await vscode.window.showQuickPick(items, { placeHolder: "Select serial port" });
+		if (!pick) return;
+		selectedPort = pick.label;
+	} else {
+		selectedPort = await vscode.window.showInputBox({
+			placeHolder: process.platform === "win32" ? "COM3" : "/dev/ttyUSB0",
+			prompt: "No ports auto-detected. Enter serial port manually:",
+			value: config.get<string>("serial.defaultPort") || "",
+		});
+		if (!selectedPort) return;
+	}
+
+	const defaultBaud = config.get<number>("serial.defaultBaudRate") || 115200;
+	const baudStr = await vscode.window.showInputBox({
+		placeHolder: String(defaultBaud),
+		prompt: "Baud rate",
+		value: String(defaultBaud),
+	});
+	if (!baudStr) return;
+	const baudRate = parseInt(baudStr, 10);
+	if (isNaN(baudRate)) {
+		vscode.window.showErrorMessage("Invalid baud rate");
+		return;
+	}
+
+	const serialConfig: SerialConfig = {
+		port: selectedPort,
+		baudRate,
+		dataBits: 8,
+		parity: "none",
+		stopBits: 1,
+		flowControl: "none",
+	};
+
+	// Disconnect existing serial terminal if any
+	if (activeSerialPty) {
+		activeSerialPty.dispose();
+	}
+	if (activeSerialTerminal) {
+		activeSerialTerminal.dispose();
+	}
+
+	const pty = new SerialTerminalProvider(serialConfig);
+	activeSerialPty = pty;
+	const terminal = vscode.window.createTerminal({
+		name: `UART: ${selectedPort}`,
+		pty,
+	});
+	activeSerialTerminal = terminal;
+	terminal.show();
+	updateConnectionButtons();
+}
+
+function serialDisconnect() {
+	if (activeSerialPty) {
+		activeSerialPty.dispose();
+		activeSerialPty = undefined;
+	}
+	if (activeSerialTerminal) {
+		activeSerialTerminal.dispose();
+		activeSerialTerminal = undefined;
+	}
+	updateConnectionButtons();
+	vscode.window.showInformationMessage("Serial terminal disconnected.");
+}
+
+async function serialToggle() {
+	if (activeSerialPty && activeSerialTerminal) {
+		serialDisconnect();
+		return;
+	}
+	await serialConnect();
+}
+
+// ---------------------------------------------------------------------------
+// Telnet Terminal commands
+// ---------------------------------------------------------------------------
+
+async function telnetConnect() {
+	const config = vscode.workspace.getConfiguration("xilinx-debug");
+
+	const defaultHost = config.get<string>("telnet.defaultHost") || "127.0.0.1";
+	const host = await vscode.window.showInputBox({
+		placeHolder: defaultHost,
+		prompt: "Telnet host",
+		value: defaultHost,
+	});
+	if (!host) return;
+
+	const defaultPort = config.get<number>("telnet.defaultPort") || 23;
+	const portStr = await vscode.window.showInputBox({
+		placeHolder: String(defaultPort),
+		prompt: "Telnet port",
+		value: String(defaultPort),
+	});
+	if (!portStr) return;
+	const port = parseInt(portStr, 10);
+	if (isNaN(port)) {
+		vscode.window.showErrorMessage("Invalid port number");
+		return;
+	}
+
+	const telnetConfig: TelnetConfig = { host, port };
+
+	// Disconnect existing telnet terminal if any
+	if (activeTelnetPty) {
+		activeTelnetPty.dispose();
+	}
+	if (activeTelnetTerminal) {
+		activeTelnetTerminal.dispose();
+	}
+
+	const pty = new TelnetTerminalProvider(telnetConfig);
+	activeTelnetPty = pty;
+	const terminal = vscode.window.createTerminal({
+		name: `Telnet: ${host}:${port}`,
+		pty,
+	});
+	activeTelnetTerminal = terminal;
+	terminal.show();
+	updateConnectionButtons();
+}
+
+function telnetDisconnect() {
+	if (activeTelnetPty) {
+		activeTelnetPty.dispose();
+		activeTelnetPty = undefined;
+	}
+	if (activeTelnetTerminal) {
+		activeTelnetTerminal.dispose();
+		activeTelnetTerminal = undefined;
+	}
+	updateConnectionButtons();
+	vscode.window.showInformationMessage("Telnet terminal disconnected.");
+}
+
+async function telnetToggle() {
+	if (activeTelnetPty && activeTelnetTerminal) {
+		telnetDisconnect();
+		return;
+	}
+	await telnetConnect();
+}
+
+// ---------------------------------------------------------------------------
+// Raw TCP Terminal commands
+// ---------------------------------------------------------------------------
+
+async function rawTcpConnect() {
+	const config = vscode.workspace.getConfiguration("xilinx-debug");
+
+	const defaultHost = config.get<string>("tcp.defaultHost") || "127.0.0.1";
+	const host = await vscode.window.showInputBox({
+		placeHolder: defaultHost,
+		prompt: "Raw TCP host",
+		value: defaultHost,
+	});
+	if (!host) return;
+
+	const defaultPort = config.get<number>("tcp.defaultPort") || 5000;
+	const portStr = await vscode.window.showInputBox({
+		placeHolder: String(defaultPort),
+		prompt: "Raw TCP port",
+		value: String(defaultPort),
+	});
+	if (!portStr) return;
+	const port = parseInt(portStr, 10);
+	if (isNaN(port)) {
+		vscode.window.showErrorMessage("Invalid port number");
+		return;
+	}
+
+	const tcpConfig: RawTcpConfig = { host, port };
+
+	if (activeRawTcpPty) {
+		activeRawTcpPty.dispose();
+	}
+	if (activeRawTcpTerminal) {
+		activeRawTcpTerminal.dispose();
+	}
+
+	const pty = new RawTcpTerminalProvider(tcpConfig);
+	activeRawTcpPty = pty;
+	const terminal = vscode.window.createTerminal({
+		name: `TCP: ${host}:${port}`,
+		pty,
+	});
+	activeRawTcpTerminal = terminal;
+	terminal.show();
+	updateConnectionButtons();
+}
+
+function rawTcpDisconnect() {
+	if (activeRawTcpPty) {
+		activeRawTcpPty.dispose();
+		activeRawTcpPty = undefined;
+	}
+	if (activeRawTcpTerminal) {
+		activeRawTcpTerminal.dispose();
+		activeRawTcpTerminal = undefined;
+	}
+	updateConnectionButtons();
+	vscode.window.showInformationMessage("Raw TCP terminal disconnected.");
+}
+
+async function rawTcpToggle() {
+	if (activeRawTcpPty && activeRawTcpTerminal) {
+		rawTcpDisconnect();
+		return;
+	}
+	await rawTcpConnect();
+}
+
+// ---------------------------------------------------------------------------
+// Hex Memory Editor
+// ---------------------------------------------------------------------------
+
+async function hexEditorOpen(context: vscode.ExtensionContext) {
+	const config = vscode.workspace.getConfiguration("xilinx-debug");
+	const defaultByteCount = config.get<number>("hexEditor.defaultByteCount") || 256;
+
+	const addrStr = await vscode.window.showInputBox({
+		placeHolder: "0xF8000000",
+		prompt: "Enter start address (hex)",
+	});
+	if (!addrStr) return;
+	const address = parseInt(addrStr, addrStr.startsWith("0x") ? 16 : 10);
+	if (isNaN(address)) {
+		vscode.window.showErrorMessage("Invalid address");
+		return;
+	}
+
+	const countStr = await vscode.window.showInputBox({
+		placeHolder: String(defaultByteCount),
+		prompt: "Number of bytes to read",
+		value: String(defaultByteCount),
+	});
+	if (!countStr) return;
+	const byteCount = parseInt(countStr, 10);
+	if (isNaN(byteCount) || byteCount <= 0) {
+		vscode.window.showErrorMessage("Invalid byte count");
+		return;
+	}
+
+	HexEditorPanel.createOrShow(context.extensionUri, address, byteCount);
+}
+
+// ---------------------------------------------------------------------------
+// Quick Reset commands
+// ---------------------------------------------------------------------------
+
+async function xsdbQuickReset() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+
+	// Check launch config or workspace setting for default reset type
+	const config = vscode.workspace.getConfiguration("xilinx-debug");
+	const resetType = config.get<string>("xsdb.defaultResetType") || "processor";
+
+	try {
+		await session.customRequest("xsdb-resetBoard", { resetType });
+		vscode.window.showInformationMessage(`Board reset (${resetType}) complete.`);
+	} catch (err) {
+		vscode.window.showErrorMessage(`Board reset failed: ${err}`);
+	}
+}
+
+async function xsdbQuickResetTyped(resetType: "processor" | "system") {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+
+	try {
+		await session.customRequest("xsdb-resetBoard", { resetType });
+		vscode.window.showInformationMessage(`Board reset (${resetType}) complete.`);
+	} catch (err) {
+		vscode.window.showErrorMessage(`Board reset failed: ${err}`);
+	}
+}
+
+function updateResetButtonVisibility(): void {
+	if (!resetStatusBarItem) return;
+	const session = vscode.debug.activeDebugSession;
+	if (session && session.type === "xsdb-gdb") {
+		resetStatusBarItem.show();
+	} else {
+		resetStatusBarItem.hide();
+	}
+}
+
+function updateConnectionButtons(): void {
+	if (serialStatusBarItem) {
+		const connected = !!(activeSerialTerminal && activeSerialPty);
+		serialStatusBarItem.text = connected ? "$(debug-disconnect) UART" : "$(plug) UART";
+		serialStatusBarItem.tooltip = connected ? "Disconnect UART terminal" : "Connect UART terminal";
+		serialStatusBarItem.show();
+	}
+
+	if (telnetStatusBarItem) {
+		const connected = !!(activeTelnetTerminal && activeTelnetPty);
+		telnetStatusBarItem.text = connected ? "$(debug-disconnect) Telnet" : "$(vm-connect) Telnet";
+		telnetStatusBarItem.tooltip = connected ? "Disconnect Telnet terminal" : "Connect Telnet terminal";
+		telnetStatusBarItem.show();
+	}
+
+	if (tcpStatusBarItem) {
+		const connected = !!(activeRawTcpTerminal && activeRawTcpPty);
+		tcpStatusBarItem.text = connected ? "$(debug-disconnect) TCP" : "$(radio-tower) TCP";
+		tcpStatusBarItem.tooltip = connected ? "Disconnect raw TCP terminal" : "Connect raw TCP terminal";
+		tcpStatusBarItem.show();
+	}
 }

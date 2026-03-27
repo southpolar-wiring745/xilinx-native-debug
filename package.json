@@ -1,33 +1,58 @@
 {
-	"name": "debug",
-	"displayName": "Native Debug",
-	"description": "GDB, LLDB & Mago-MI Debugger support for VSCode",
+	"name": "xilinx-native-debug",
+	"displayName": "Xilinx Native Debug",
+	"description": "Xilinx and embedded native debugging for XSDB, GDB, LLDB, Zynq, ZynqMP, Versal, and MicroBlaze in VS Code",
 	"keywords": [
 		"gdb",
+		"xsdb",
 		"lldb",
 		"mago-mi",
 		"native",
-		"debug"
+		"debug",
+		"xilinx",
+		"zynq",
+		"zynqmp",
+		"microblaze"
 	],
 	"license": "public domain",
-	"version": "0.27.1",
-	"publisher": "webfreak",
+	"version": "0.29.0",
+	"publisher": "1nv4510n",
+	"author": "1nv4510n",
 	"icon": "images/icon.png",
 	"engines": {
 		"vscode": "^1.55.0"
 	},
 	"main": "./out/src/frontend/extension",
 	"activationEvents": [
+		"onStartupFinished",
 		"onCommand:code-debug.examineMemoryLocation",
 		"onCommand:code-debug.getFileNameNoExt",
-		"onCommand:code-debug.getFileBasenameNoExt"
+		"onCommand:code-debug.getFileBasenameNoExt",
+		"onCommand:code-debug.xsdb.programFPGA",
+		"onCommand:code-debug.xsdb.resetBoard",
+		"onCommand:code-debug.xsdb.readMemory",
+		"onCommand:code-debug.xsdb.writeMemory",
+		"onCommand:code-debug.xsdb.sendCommand",
+		"onCommand:code-debug.serial.connect",
+		"onCommand:code-debug.serial.disconnect",
+		"onCommand:code-debug.serial.toggle",
+		"onCommand:code-debug.telnet.connect",
+		"onCommand:code-debug.telnet.disconnect",
+		"onCommand:code-debug.telnet.toggle",
+		"onCommand:code-debug.tcp.connect",
+		"onCommand:code-debug.tcp.disconnect",
+		"onCommand:code-debug.tcp.toggle",
+		"onCommand:code-debug.hexEditor.open",
+		"onCommand:code-debug.xsdb.quickReset",
+		"onCommand:code-debug.xsdb.resetProcessor",
+		"onCommand:code-debug.xsdb.resetSystem"
 	],
 	"categories": [
 		"Debuggers"
 	],
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/WebFreak001/code-debug.git"
+		"url": "https://github.com/1nv4510n/xilinx-native-debug.git"
 	},
 	"capabilities": {
 		"untrustedWorkspaces": {
@@ -38,7 +63,82 @@
 		"commands": [
 			{
 				"command": "code-debug.examineMemoryLocation",
-				"title": "Code-Debug: Examine memory location"
+				"title": "Xilinx Native Debug: Examine Memory Location"
+			},
+			{
+				"command": "code-debug.xsdb.programFPGA",
+				"title": "XSDB: Program FPGA Bitstream"
+			},
+			{
+				"command": "code-debug.xsdb.resetBoard",
+				"title": "XSDB: Reset Board"
+			},
+			{
+				"command": "code-debug.xsdb.readMemory",
+				"title": "XSDB: Read Memory"
+			},
+			{
+				"command": "code-debug.xsdb.writeMemory",
+				"title": "XSDB: Write Memory"
+			},
+			{
+				"command": "code-debug.xsdb.sendCommand",
+				"title": "XSDB: Send Command"
+			},
+			{
+				"command": "code-debug.serial.connect",
+				"title": "UART: Connect Serial Terminal"
+			},
+			{
+				"command": "code-debug.serial.disconnect",
+				"title": "UART: Disconnect Serial Terminal"
+			},
+			{
+				"command": "code-debug.serial.toggle",
+				"title": "UART: Toggle Connect/Disconnect"
+			},
+			{
+				"command": "code-debug.telnet.connect",
+				"title": "Telnet: Connect"
+			},
+			{
+				"command": "code-debug.telnet.disconnect",
+				"title": "Telnet: Disconnect"
+			},
+			{
+				"command": "code-debug.telnet.toggle",
+				"title": "Telnet: Toggle Connect/Disconnect"
+			},
+			{
+				"command": "code-debug.tcp.connect",
+				"title": "TCP: Connect (Raw)"
+			},
+			{
+				"command": "code-debug.tcp.disconnect",
+				"title": "TCP: Disconnect (Raw)"
+			},
+			{
+				"command": "code-debug.tcp.toggle",
+				"title": "TCP: Toggle Connect/Disconnect (Raw)"
+			},
+			{
+				"command": "code-debug.hexEditor.open",
+				"title": "XSDB: Hex Memory Editor"
+			},
+			{
+				"command": "code-debug.xsdb.quickReset",
+				"title": "XSDB: Quick Reset",
+				"icon": "$(debug-restart)"
+			},
+			{
+				"command": "code-debug.xsdb.resetProcessor",
+				"title": "XSDB: Reset Processor",
+				"icon": "$(debug-restart)"
+			},
+			{
+				"command": "code-debug.xsdb.resetSystem",
+				"title": "XSDB: Reset System",
+				"icon": "$(debug-restart)"
 			}
 		],
 		"breakpoints": [
@@ -104,6 +204,9 @@
 			},
 			{
 				"language": "riscv"
+			},
+			{
+				"language": "tcl"
 			}
 		],
 		"debuggers": [
@@ -1127,8 +1230,669 @@
 						}
 					}
 				]
+			},
+			{
+				"type": "xsdb-gdb",
+				"program": "./out/src/zynq.js",
+				"runtime": "node",
+				"label": "Xilinx XSDB + GDB",
+				"languages": [
+					"c",
+					"cpp",
+					"asm",
+					"arm",
+					"tcl"
+				],
+				"variables": {
+					"FileBasenameNoExt": "code-debug.getFileBasenameNoExt",
+					"FileNameNoExt": "code-debug.getFileNameNoExt"
+				},
+				"configurationAttributes": {
+					"launch": {
+						"required": [
+							"target",
+							"cwd"
+						],
+						"properties": {
+							"target": {
+								"type": "string",
+								"description": "Path of executable"
+							},
+							"arguments": {
+								"type": "string",
+								"description": "Arguments to append after the executable"
+							},
+							"terminal": {
+								"type": "string",
+								"description": "Leave this field undefined to keep program output in the vscode console at the bottom."
+							},
+							"cwd": {
+								"type": "string",
+								"description": "Project path"
+							},
+							"gdbpath": {
+								"type": "string",
+								"description": "Path to the gdb executable or the command if in PATH",
+								"default": "gdb"
+							},
+							"env": {
+								"type": "object",
+								"description": "Environment overriding the gdb (and in turn also the process) environment",
+								"default": null
+							},
+							"debugger_args": {
+								"type": "array",
+								"description": "Additional arguments to pass to GDB",
+								"default": []
+							},
+							"pathSubstitutions": {
+								"type": "object",
+								"description": "Help GDB find your source using path substitutions (GDB substitute-path variable)",
+								"default": {
+									"<fromPath>": "<toPath>"
+								}
+							},
+							"valuesFormatting": {
+								"type": "string",
+								"description": "Set the way of showing variable values.",
+								"default": "prettyPrinters",
+								"enum": ["disabled", "parseText", "prettyPrinters"]
+							},
+							"frameFilters": {
+								"type": "boolean",
+								"description": "Use frame filters registered in GDB",
+								"default": true
+							},
+							"printCalls": {
+								"type": "boolean",
+								"description": "Prints all GDB calls to the console",
+								"default": false
+							},
+							"showDevDebugOutput": {
+								"type": "boolean",
+								"description": "Prints all GDB responses to the console",
+								"default": false
+							},
+							"autorun": {
+								"type": "array",
+								"description": "GDB commands to run when starting to debug",
+								"default": []
+							},
+							"stopAtEntry": {
+								"type": ["boolean", "string"],
+								"description": "Whether debugger should stop at application entry point",
+								"default": false
+							},
+							"ssh": {
+								"required": ["host", "cwd", "user"],
+								"type": "object",
+								"description": "If set, connect to an ssh host and run GDB there",
+								"properties": {
+									"host": { "type": "string", "description": "Remote host name/ip" },
+									"port": { "type": ["number", "string"], "description": "Remote port number", "default": 22 },
+									"user": { "type": "string", "description": "Username to connect as" },
+									"password": { "type": "string", "description": "Plain text password (unsafe; if possible use keyfile instead)" },
+									"keyfile": { "type": "string", "description": "Absolute path to private key" },
+									"useAgent": { "type": "boolean", "description": "Auto-detect the running SSH agent", "default": false },
+									"sourceFileMap": { "type": "object", "description": "Mapping of source paths from GDB on ssh remote to local paths.", "default": { "<sourcePath>": "<localPath>" } },
+									"cwd": { "type": "string", "description": "Working directory for the debugger." },
+									"forwardX11": { "type": "boolean", "description": "If true, the server will redirect x11 to the local host", "default": true },
+									"x11port": { "type": ["number", "string"], "description": "TCP port to redirect X11 data to", "default": 6000 },
+									"x11host": { "type": "string", "description": "Hostname/ip to redirect X11 data to", "default": "localhost" },
+									"remotex11screen": { "type": "number", "description": "Screen to start the application on the remote side", "default": 0 },
+									"bootstrap": { "type": "string", "description": "Content will be executed on the SSH host before the debugger call." }
+								}
+							},
+							"registerLimit": {
+								"type": "string",
+								"description": "List of register numbers to display. Empty string for all.",
+								"default": ""
+							},
+							"xsdbPath": {
+								"type": "string",
+								"description": "Path to the xsdb executable (or xsdb.bat on Windows)",
+								"default": "xsdb"
+							},
+							"hwServerUrl": {
+								"type": "string",
+								"description": "hw_server URL (e.g. TCP:localhost:3121). Leave empty for local auto-connect."
+							},
+							"bitstreamPath": {
+								"type": "string",
+								"description": "Path to the .bit / .pdi bitstream file for FPGA programming"
+							},
+							"ltxPath": {
+								"type": "string",
+								"description": "Optional path to the .ltx probes file for ILA debug"
+							},
+							"loadhwMemRanges": {
+								"type": "array",
+								"description": "Optional memory ranges for loadhw (each item format: '0xSTART 0xEND')",
+								"default": []
+							},
+							"hwDesignPath": {
+								"type": "string",
+								"description": "Path to the .hdf / .xsa hardware design file"
+							},
+							"psInitScript": {
+								"type": "string",
+								"description": "Path to the PS init Tcl script (e.g. ps7_init.tcl)"
+							},
+							"initScript": {
+								"type": "string",
+								"description": "Path to a custom Tcl init script (overrides all preset init steps)"
+							},
+							"initTargetFilter": {
+								"type": "string",
+								"description": "XSDB init target filter used before loadhw/ps init (e.g. 'APU*')"
+							},
+							"targetFilter": {
+								"type": "string",
+								"description": "XSDB target name/filter to select (e.g. 'ARM Cortex-A9 #0', 'APU*')"
+							},
+							"jtagCableName": {
+								"type": "string",
+								"description": "Optional JTAG cable name filter (matches jtag_cable_name)"
+							},
+							"resetType": {
+								"type": "string",
+								"description": "Reset type after init",
+								"default": "processor",
+								"enum": ["processor", "system", "none"]
+							},
+							"forceMemAccess": {
+								"type": "boolean",
+								"description": "Run 'configparams force-mem-access 1' before init and set back to 0 after reset",
+								"default": false
+							},
+							"stopBeforePsInit": {
+								"type": "boolean",
+								"description": "Run XSDB 'stop' before PS init sequence",
+								"default": false
+							},
+							"keepXsdbAlive": {
+								"type": "boolean",
+								"description": "Keep XSDB running alongside GDB for runtime memory/register access",
+								"default": true
+							},
+							"boardFamily": {
+								"type": "string",
+								"description": "Xilinx board family for preset init sequence",
+								"default": "auto",
+								"enum": ["zynq7000", "zynqmp", "versal", "fpga", "auto"]
+							},
+							"xsdbAutorun": {
+								"type": "array",
+								"description": "Additional XSDB commands to run after init",
+								"default": []
+							},
+							"registerPreset": {
+								"type": "string",
+								"description": "XSDB register display preset: 'minimal' (GP+SP+PC+CPSR), 'core' (all non-banked), or 'all'",
+								"default": "core",
+								"enum": ["minimal", "core", "all"]
+							},
+							"peripheralWatch": {
+								"type": "array",
+								"description": "Custom peripheral/memory addresses to watch. Each entry: { name, address, count?, refreshOnStop? }",
+								"default": [],
+								"items": {
+									"type": "object",
+									"properties": {
+										"name": { "type": "string", "description": "Display name" },
+										"address": { "type": "string", "description": "Hex address (e.g. 0xF8000000)" },
+										"count": { "type": "number", "description": "Number of words to read", "default": 1 },
+										"refreshOnStop": { "type": "boolean", "description": "Refresh on every stop event", "default": true }
+									},
+									"required": ["name", "address"]
+								}
+							},
+							"breakpointAutoReapply": {
+								"type": "boolean",
+								"description": "Re-validate GDB breakpoints after XSDB reset/init cycles",
+								"default": true
+							},
+							"freertosAwareness": {
+								"type": "boolean",
+								"description": "Enable FreeRTOS task detection and display in Variables panel",
+								"default": false
+							},
+							"mapFilePath": {
+								"type": "string",
+								"description": "Path to GNU ld linker .map file for symbol annotation of memory addresses"
+							},
+							"xsdbTraceCommands": {
+								"type": "boolean",
+								"description": "Record XSDB command trace with timestamps and latency (view with 'xsdb: trace' in debug console)",
+								"default": false
+							}
+						}
+					},
+					"attach": {
+						"required": [
+							"target",
+							"cwd"
+						],
+						"properties": {
+							"target": {
+								"type": "string",
+								"description": "PID of running program or connection arguments (e.g. :2345) if remote is true"
+							},
+							"remote": {
+								"type": "boolean",
+								"description": "If true this will connect to a gdbserver instead of attaching to a PID",
+								"default": false
+							},
+							"valuesFormatting": {
+								"type": "string",
+								"description": "Set the way of showing variable values.",
+								"default": "parseText",
+								"enum": ["disabled", "parseText", "prettyPrinters"]
+							},
+							"frameFilters": {
+								"type": "boolean",
+								"description": "Use frame filters registered in GDB",
+								"default": true
+							},
+							"printCalls": {
+								"type": "boolean",
+								"description": "Prints all GDB calls to the console",
+								"default": false
+							},
+							"showDevDebugOutput": {
+								"type": "boolean",
+								"description": "Prints all GDB responses to the console",
+								"default": false
+							},
+							"executable": {
+								"type": "string",
+								"description": "Path of executable for debugging symbols"
+							},
+							"gdbpath": {
+								"type": "string",
+								"description": "Path to the gdb executable or the command if in PATH",
+								"default": "gdb"
+							},
+							"env": {
+								"type": "object",
+								"description": "Environment overriding the gdb (and in turn also the process) environment",
+								"default": null
+							},
+							"debugger_args": {
+								"type": "array",
+								"description": "Additional arguments to pass to GDB",
+								"default": []
+							},
+							"pathSubstitutions": {
+								"type": "object",
+								"description": "Help GDB find your source using path substitutions",
+								"default": { "<fromPath>": "<toPath>" }
+							},
+							"cwd": {
+								"type": "string",
+								"description": "Project path",
+								"default": "${workspaceRoot}"
+							},
+							"autorun": {
+								"type": "array",
+								"description": "GDB commands to run when starting to debug",
+								"default": []
+							},
+							"stopAtConnect": {
+								"type": "boolean",
+								"description": "Whether debugger should stop after connecting to target",
+								"default": false
+							},
+							"stopAtEntry": {
+								"type": ["boolean", "string"],
+								"description": "Whether debugger should stop at application entry point",
+								"default": false
+							},
+							"ssh": {
+								"required": ["host", "cwd", "user"],
+								"type": "object",
+								"description": "If set, connect to an ssh host and run GDB there",
+								"properties": {
+									"host": { "type": "string", "description": "Remote host name/ip" },
+									"port": { "type": ["number", "string"], "description": "Remote port number", "default": 22 },
+									"user": { "type": "string", "description": "Username to connect as" },
+									"password": { "type": "string", "description": "Plain text password (unsafe; if possible use keyfile instead)" },
+									"keyfile": { "type": "string", "description": "Absolute path to private key" },
+									"useAgent": { "type": "boolean", "description": "Auto-detect the running SSH agent", "default": false },
+									"sourceFileMap": { "type": "object", "description": "Mapping of source paths from GDB on ssh remote to local paths.", "default": { "<sourcePath>": "<localPath>" } },
+									"cwd": { "type": "string", "description": "Working directory for the debugger." },
+									"forwardX11": { "type": "boolean", "description": "If true, the server will redirect x11 to the local host", "default": true },
+									"x11port": { "type": ["number", "string"], "description": "TCP port to redirect X11 data to", "default": 6000 },
+									"x11host": { "type": "string", "description": "Hostname/ip to redirect X11 data to", "default": "localhost" },
+									"remotex11screen": { "type": "number", "description": "Screen to start the application on the remote side", "default": 0 },
+									"bootstrap": { "type": "string", "description": "Content will be executed on the SSH host before the debugger call." }
+								}
+							},
+							"registerLimit": {
+								"type": "string",
+								"description": "List of register numbers to display. Empty string for all.",
+								"default": ""
+							},
+							"xsdbPath": {
+								"type": "string",
+								"description": "Path to the xsdb executable (or xsdb.bat on Windows)",
+								"default": "xsdb"
+							},
+							"hwServerUrl": {
+								"type": "string",
+								"description": "hw_server URL (e.g. TCP:localhost:3121). Leave empty for local auto-connect."
+							},
+							"bitstreamPath": {
+								"type": "string",
+								"description": "Path to the .bit / .pdi bitstream file for FPGA programming"
+							},
+							"ltxPath": {
+								"type": "string",
+								"description": "Optional path to the .ltx probes file for ILA debug"
+							},
+							"loadhwMemRanges": {
+								"type": "array",
+								"description": "Optional memory ranges for loadhw (each item format: '0xSTART 0xEND')",
+								"default": []
+							},
+							"hwDesignPath": {
+								"type": "string",
+								"description": "Path to the .hdf / .xsa hardware design file"
+							},
+							"psInitScript": {
+								"type": "string",
+								"description": "Path to the PS init Tcl script (e.g. ps7_init.tcl)"
+							},
+							"initScript": {
+								"type": "string",
+								"description": "Path to a custom Tcl init script (overrides all preset init steps)"
+							},
+							"initTargetFilter": {
+								"type": "string",
+								"description": "XSDB init target filter used before loadhw/ps init (e.g. 'APU*')"
+							},
+							"targetFilter": {
+								"type": "string",
+								"description": "XSDB target name/filter to select (e.g. 'ARM Cortex-A9 #0', 'APU*')"
+							},
+							"jtagCableName": {
+								"type": "string",
+								"description": "Optional JTAG cable name filter (matches jtag_cable_name)"
+							},
+							"resetType": {
+								"type": "string",
+								"description": "Reset type after init",
+								"default": "processor",
+								"enum": ["processor", "system", "none"]
+							},
+							"forceMemAccess": {
+								"type": "boolean",
+								"description": "Run 'configparams force-mem-access 1' before init and set back to 0 after reset",
+								"default": false
+							},
+							"stopBeforePsInit": {
+								"type": "boolean",
+								"description": "Run XSDB 'stop' before PS init sequence",
+								"default": false
+							},
+							"keepXsdbAlive": {
+								"type": "boolean",
+								"description": "Keep XSDB running alongside GDB for runtime memory/register access",
+								"default": true
+							},
+							"boardFamily": {
+								"type": "string",
+								"description": "Xilinx board family for preset init sequence",
+								"default": "auto",
+								"enum": ["zynq7000", "zynqmp", "versal", "fpga", "auto"]
+							},
+							"xsdbAutorun": {
+								"type": "array",
+								"description": "Additional XSDB commands to run after init",
+								"default": []
+							},
+							"registerPreset": {
+								"type": "string",
+								"description": "XSDB register display preset: 'minimal' (GP+SP+PC+CPSR), 'core' (all non-banked), or 'all'",
+								"default": "core",
+								"enum": ["minimal", "core", "all"]
+							},
+							"peripheralWatch": {
+								"type": "array",
+								"description": "Custom peripheral/memory addresses to watch. Each entry: { name, address, count?, refreshOnStop? }",
+								"default": [],
+								"items": {
+									"type": "object",
+									"properties": {
+										"name": { "type": "string", "description": "Display name" },
+										"address": { "type": "string", "description": "Hex address (e.g. 0xF8000000)" },
+										"count": { "type": "number", "description": "Number of words to read", "default": 1 },
+										"refreshOnStop": { "type": "boolean", "description": "Refresh on every stop event", "default": true }
+									},
+									"required": ["name", "address"]
+								}
+							},
+							"breakpointAutoReapply": {
+								"type": "boolean",
+								"description": "Re-validate GDB breakpoints after XSDB reset/init cycles",
+								"default": true
+							},
+							"freertosAwareness": {
+								"type": "boolean",
+								"description": "Enable FreeRTOS task detection and display in Variables panel",
+								"default": false
+							},
+							"mapFilePath": {
+								"type": "string",
+								"description": "Path to GNU ld linker .map file for symbol annotation of memory addresses"
+							},
+							"xsdbTraceCommands": {
+								"type": "boolean",
+								"description": "Record XSDB command trace with timestamps and latency (view with 'xsdb: trace' in debug console)",
+								"default": false
+							}
+						}
+					}
+				},
+				"initialConfigurations": [
+					{
+						"name": "XSDB+GDB: Debug Zynq Application",
+						"type": "xsdb-gdb",
+						"request": "attach",
+						"target": "extended-remote localhost:3000",
+						"executable": "./build/app.elf",
+						"remote": true,
+						"cwd": "${workspaceRoot}",
+						"xsdbPath": "xsdb",
+						"bitstreamPath": "./build/design.bit",
+						"ltxPath": "./build/design.ltx",
+						"loadhwMemRanges": [
+							"0x40000000 0xbfffffff"
+						],
+						"hwDesignPath": "./build/design.hdf",
+						"psInitScript": "./build/ps7_init.tcl",
+						"initTargetFilter": "APU*",
+						"targetFilter": "ARM*#0",
+						"forceMemAccess": true,
+						"stopBeforePsInit": true,
+						"boardFamily": "zynq7000",
+						"valuesFormatting": "parseText"
+					}
+				],
+				"configurationSnippets": [
+					{
+						"label": "XSDB+GDB: Zynq-7000 Debug PS Application",
+						"description": "Program FPGA, init PS7, then attach GDB for Zynq-7000 application debugging",
+						"body": {
+							"type": "xsdb-gdb",
+							"request": "attach",
+							"name": "${8:Debug Zynq-7000}",
+							"xsdbPath": "${1:xsdb}",
+							"bitstreamPath": "${2:./build/design.bit}",
+							"ltxPath": "${3:./build/design.ltx}",
+							"hwDesignPath": "${4:./build/design.hdf}",
+							"psInitScript": "${5:./build/ps7_init.tcl}",
+							"targetFilter": "ARM Cortex-A9 #0",
+							"resetType": "processor",
+							"boardFamily": "zynq7000",
+							"gdbpath": "${6:arm-none-eabi-gdb}",
+							"target": "extended-remote ${7:localhost:3000}",
+							"executable": "${8:./build/app.elf}",
+							"remote": true,
+							"cwd": "^\"\\${workspaceRoot}\"",
+							"stopAtEntry": true,
+							"valuesFormatting": "parseText"
+						}
+					},
+					{
+						"label": "XSDB+GDB: Zynq UltraScale+ Debug PS Application",
+						"description": "Program FPGA, init PSU, then attach GDB for Zynq UltraScale+ application debugging",
+						"body": {
+							"type": "xsdb-gdb",
+							"request": "attach",
+							"name": "${8:Debug Zynq UltraScale+}",
+							"xsdbPath": "${1:xsdb}",
+							"bitstreamPath": "${2:./build/design.bit}",
+							"ltxPath": "${3:./build/design.ltx}",
+							"hwDesignPath": "${4:./build/design.xsa}",
+							"psInitScript": "${5:./build/psu_init.tcl}",
+							"targetFilter": "Cortex-A53 #0",
+							"resetType": "processor",
+							"boardFamily": "zynqmp",
+							"gdbpath": "${6:aarch64-none-elf-gdb}",
+							"target": "extended-remote ${7:localhost:3000}",
+							"executable": "${8:./build/app.elf}",
+							"remote": true,
+							"cwd": "^\"\\${workspaceRoot}\"",
+							"stopAtEntry": true,
+							"valuesFormatting": "parseText"
+						}
+					},
+					{
+						"label": "XSDB+GDB: Program Bitstream Only",
+						"description": "Program FPGA bitstream via XSDB, then launch GDB",
+						"body": {
+							"type": "xsdb-gdb",
+							"request": "attach",
+							"name": "${5:Program & Debug FPGA}",
+							"xsdbPath": "${1:xsdb}",
+							"bitstreamPath": "${2:./build/design.bit}",
+							"ltxPath": "${3:./build/design.ltx}",
+							"boardFamily": "fpga",
+							"resetType": "none",
+							"gdbpath": "${4:mb-gdb}",
+							"target": "extended-remote ${5:localhost:3000}",
+							"executable": "./build/app.elf",
+							"remote": true,
+							"cwd": "^\"\\${workspaceRoot}\"",
+							"valuesFormatting": "parseText"
+						}
+					},
+					{
+						"label": "XSDB+GDB: Attach with Custom Init Script",
+						"description": "Run a custom XSDB Tcl init script, then attach GDB",
+						"body": {
+							"type": "xsdb-gdb",
+							"request": "attach",
+							"name": "${5:XSDB Script + GDB}",
+							"xsdbPath": "${1:xsdb}",
+							"initScript": "${2:./scripts/init_board.tcl}",
+							"gdbpath": "${3:arm-none-eabi-gdb}",
+							"target": "extended-remote ${4:localhost:3000}",
+							"executable": "./build/app.elf",
+							"remote": true,
+							"cwd": "^\"\\${workspaceRoot}\"",
+							"valuesFormatting": "parseText"
+						}
+					}
+				]
 			}
-		]
+		],
+		"menus": {
+			"debug/toolBar": [
+				{
+					"command": "code-debug.xsdb.quickReset",
+					"when": "debugType == 'xsdb-gdb'",
+					"group": "navigation"
+				}
+			],
+			"commandPalette": [
+				{
+					"command": "code-debug.xsdb.quickReset",
+					"when": "debugType == 'xsdb-gdb'"
+				},
+				{
+					"command": "code-debug.xsdb.resetProcessor",
+					"when": "debugType == 'xsdb-gdb'"
+				},
+				{
+					"command": "code-debug.xsdb.resetSystem",
+					"when": "debugType == 'xsdb-gdb'"
+				}
+			]
+		},
+		"configuration": {
+			"title": "Xilinx Native Debug",
+			"properties": {
+				"xilinx-debug.serial.defaultBaudRate": {
+					"type": "number",
+					"default": 115200,
+					"description": "Default baud rate for the UART serial terminal."
+				},
+				"xilinx-debug.serial.defaultPort": {
+					"type": "string",
+					"default": "",
+					"description": "Default serial port (e.g. COM3 on Windows, /dev/ttyUSB0 on Linux)."
+				},
+				"xilinx-debug.serial.externalTool": {
+					"type": "string",
+					"default": "auto",
+					"enum": ["auto", "plink", "picocom", "screen", "minicom", "powershell"],
+					"description": "External tool to use for serial communication. 'auto' detects the best available tool."
+				},
+				"xilinx-debug.telnet.defaultHost": {
+					"type": "string",
+					"default": "127.0.0.1",
+					"description": "Default host for Telnet connections."
+				},
+				"xilinx-debug.telnet.defaultPort": {
+					"type": "number",
+					"default": 23,
+					"description": "Default port for Telnet connections."
+				},
+				"xilinx-debug.tcp.defaultHost": {
+					"type": "string",
+					"default": "127.0.0.1",
+					"description": "Default host for raw TCP terminal connections."
+				},
+				"xilinx-debug.tcp.defaultPort": {
+					"type": "number",
+					"default": 5000,
+					"description": "Default port for raw TCP terminal connections."
+				},
+				"xilinx-debug.hexEditor.defaultByteCount": {
+					"type": "number",
+					"default": 256,
+					"description": "Default number of bytes to read in the Hex Memory Editor."
+				},
+				"xilinx-debug.xsdb.defaultResetType": {
+					"type": "string",
+					"default": "processor",
+					"enum": ["processor", "system"],
+					"description": "Default reset type for the Quick Reset button."
+				},
+				"xilinx-debug.xsdb.standalonePath": {
+					"type": "string",
+					"default": "",
+					"description": "Path to the xsdb executable for standalone (non-debug-session) tools."
+				},
+				"xilinx-debug.xsdb.standaloneHwServerUrl": {
+					"type": "string",
+					"default": "",
+					"description": "hw_server URL for standalone XSDB connections (e.g. tcp:127.0.0.1:3121)."
+				}
+			}
+		}
 	},
 	"scripts": {
 		"vscode:prepublish": "tsc -p ./",

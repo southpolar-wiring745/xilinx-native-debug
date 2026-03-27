@@ -1,236 +1,389 @@
-# Debug
+# Xilinx Native Debug
 
-[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/webfreak.debug?label=VS%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=webfreak.debug)
-[![Open VSX Registry](https://img.shields.io/open-vsx/v/webfreak/debug?label=Open%20VSX)](https://open-vsx.org/extension/webfreak/debug)
-[![GitHub CI Status](https://img.shields.io/github/workflow/status/WebFreak001/code-debug/Unit%20Test%20Project?label=CI&logo=GitHub)](https://github.com/WebFreak001/code-debug/actions/workflows/unit_test.yml)
-[![Coverage Status](https://img.shields.io/codecov/c/github/WebFreak001/code-debug)](https://codecov.io/github/WebFreak001/code-debug)
+Xilinx Native Debug is a Visual Studio Code debugger extension for embedded and native targets, with first-class support for Xilinx workflows.
 
-Native VSCode debugger. Supports both GDB and LLDB.
+It focuses on:
 
-## Installation
+- XSDB-driven board bring-up and runtime access
+- GDB-based software debugging
+- Zynq-7000, Zynq UltraScale+, Versal, and MicroBlaze targets
+- classic native GDB, LLDB, and Mago-MI workflows where needed
 
-Press ctrl-p (cmd+p on OS X) and run `ext install webfreak.debug` in visual studio code and install GDB/LLDB. See `Usage` for details on how to set it up.
+## VS Code name and description
 
-![Preview](images/preview.png)
+- Extension name: Xilinx Native Debug
+- Extension description: Xilinx and embedded native debugging for XSDB, GDB, LLDB, Zynq, ZynqMP, Versal, and MicroBlaze in VS Code
 
-## Usage
+## What this extension is for
 
-![Image with red circle around a gear and a red arrow pointing at GDB and LLDB](images/tutorial1.png)
+This extension is designed for developers debugging:
 
-Or if you already have an existing debugger in your project setup you can click "Create Configuration" or use the auto completion instead:
+- Zynq-7000 processing systems
+- Zynq UltraScale+ MPSoC applications
+- Versal platforms
+- MicroBlaze software on FPGA designs
+- mixed FPGA + processor bring-up flows
+- remote GDB targets for embedded systems
 
-![Visual studio code debugger launch.json auto completion showing alternative way to create debuggers](images/tutorial1-alt.png)
+The main Xilinx workflow is provided by the `xsdb-gdb` debugger type:
 
-Open your project and click the debug button in your sidebar. At the top right press
-the little gear icon and select GDB or LLDB. It will automatically generate the configuration
-you need.
+- XSDB handles board connection, target selection, bitstream download, hardware handoff loading, PS init, reset, memory/register access, and custom Tcl commands
+- GDB handles symbols, breakpoints, stepping, stack, variables, and source-level debugging
 
-*Note: for LLDB you need to have `lldb-mi` in your PATH*
+## Main features
 
-If you are on OS X you can add `lldb-mi` to your path using
-`ln -s /Applications/Xcode.app/Contents/Developer/usr/bin/lldb-mi /usr/local/bin/lldb-mi` if you have Xcode.
+### Xilinx / XSDB features
 
-![Default config with a red circle around the target](images/tutorial2.png)
+- `xsdb-gdb` debug type for combined XSDB + GDB debugging
+- FPGA programming through XSDB
+- hardware export loading via `.hdf` or `.xsa`
+- PS init via `ps7_init.tcl` or `psu_init.tcl`
+- target selection by filter or JTAG cable name
+- runtime XSDB commands from the VS Code Debug Console using `xsdb:`
+- XSDB memory read/write commands from the Command Palette
+- board reset commands from the Command Palette
+- optional XSDB command tracing
 
-Now you need to change `target` to the application you want to debug relative
-to the `cwd`. (Which is the workspace root by default)
+### Debug UX features
 
-Additionally you can set `terminal` if you want to run the program in a separate terminal with
-support for input. On Windows set it to an empty string (`""`) to enable this feature. On linux
-set it to an empty string (`""`) to use the default terminal emulator specified with `x-terminal-emulator`
-or specify a custom one. Note that it must support the `-e` argument.
+- grouped register scopes for Zynq cores
+- peripheral register watch support
+- linker map annotation for watched addresses
+- optional FreeRTOS task awareness
+- breakpoint revalidation after reset flows
+- fail-fast path validation for Xilinx artifacts
 
-Before debugging you need to compile your application first, then you can run it using
-the green start button in the debug sidebar. For this you could use the `preLaunchTask`
-argument vscode allows you to do. Adding breakpoints while the program runs will not
-interrupt it immediately. For that you need to pause & resume the program once first.
-However adding breakpoints while its paused works as expected.
+### General native debug support
 
-Extending variables is very limited as it does not support child values of variables.
-Watching expressions works partially but the result does not get properly parsed and
-it shows the raw output of the command. It will run `data-evaluate-expression`
-to check for variables.
+- GDB launch and attach
+- LLDB support
+- Mago-MI support for Windows targets
+- SSH-based remote debugging
+- gdbserver-based remote debugging
+- manual MI command entry using `-` in the Debug Console
 
-While running you will get a console where you can manually type GDB/LLDB commands or MI
-commands prepended with a hyphen `-`. The console shows all output separated
-in `stdout` for the application, `stderr` for errors and `log` for log messages.
+## Supported Xilinx targets
 
-Some exceptions/signals like segmentation faults will be caught and displayed but
-it does not support for example most D exceptions.
+- Zynq-7000
+- Zynq UltraScale+ MPSoC
+- Versal
+- FPGA-only bitstream/program flows
+- MicroBlaze-based systems
 
-Support exists for stopping at the entry point of the application.  This is controlled
-through the `stopAtEntry` setting.  This value may be either a boolean or a string.  In
-the case of a boolean value of `false` (the default), this setting is disabled.  In the
-case of a boolean value of `true`, if this is a launch configuration and the debugger
-supports the `start` (or `exec-run --start` MI feature, more specifically), than this
-will be used to run to the entry point of the application.  Note that this appears to
-work fine for GDB, but LLDB doesn't necessarily seem to adhere to this, even though it may
-indicate that it supports this feature.  The alternative configuration option for the
-`stopAtEntry` setting is to specify a string where the string represents the entry point
-itself.  In this situation a temporary breakpoint will be set at the specified entry point
-and a normal run will occur for a launch configuration.  This (setting a temporary
-breakpoint) is also the behavior that occurs when the debugger does not support the
-`start` feature and the `stopAtEntry` was set to `true`.  In that case the entry point will
-default to "main".  Thus, the most portable way to use this configuration is to explicitly
-specify the entry point of the application.  In the case of an attach configuration, similar
-behavior will occur, however since there is no equivalent of the `start` command for
-attaching, a boolean value of `true` for the `stopAtEntry` setting in a launch configuration
-will automatically default to an entry point of "main", while a string value for this
-setting will be interpreted as the entry point, causing a temporary breakpoint to be set at
-that location prior to continuing execution.  Note that stopping at the entry point for the
-attach configuration assumes that the entry point has not yet been entered at the time of
-attach, otherwise this will have no affect.
+## Prerequisites
 
-There is a Registers view in the VARIABLES view. As we fetch all registers at once, there can
-be cases where a register that cannot be fetched causes the entire register request to fail,
-corrupting the entire Registers output. If this happens, you might need to set the
-`registerLimit` option to specify which registers you want the debugger to fetch
-automatically.
+Typical Xilinx setup:
 
-For example, to display only registers `rax` and `rip` in an x64 debug session, send the
-command `-data-list-register-names` in the debug console of an active x64 debug session.
-You will then receive a response containing an array starting with `["rax","rbx" ...]`.
-In this array, the index of `rax` is 0 and `rip` is 16, so set the option as
-`"registerLimit": "0 16"`. If you find the response text hard to navigate, you can paste
-it into a browser's developer tools console and press enter to get an expandable response
-object with array elements' indices explicitly displayed.
+- Xilinx tools installed with `xsdb` or `xsdb.bat`
+- reachable `hw_server`
+- bitstream file (`.bit` or `.pdi`) if PL programming is required
+- hardware handoff (`.hdf` or `.xsa`) if needed
+- PS init Tcl script (`ps7_init.tcl` / `psu_init.tcl`) when required
+- GDB and a reachable GDB endpoint such as `extended-remote localhost:3000`
 
-### Attaching to existing processes
+For Windows, `xsdb.bat` is supported directly.
 
-Attaching to existing processes currently only works by specifying the PID in the
-`launch.json` and setting `request` to `"attach"`. You also need to specify the executable
-path for the debugger to find the debug symbols.
+## Quick start: Zynq-7000 in VS Code
 
-```
-"request": "attach",
-"executable": "./bin/executable",
-"target": "4285"
-```
+Use a launch configuration like this:
 
-This will attach to PID 4285 which should already run. GDB will pause the program on entering and LLDB will keep it running.
-
-### Using `gdbserver` for remote debugging (GDB only)
-
-You can also connect to a gdbserver instance and debug using that. For that modify the
-`launch.json` by setting `request` to `"attach"` and `remote` to `true` and specifying the
-port and optionally hostname in `target`.
-
-```
-"request": "attach",
-"executable": "./bin/executable",
-"target": ":2345",
-"cwd": "${workspaceRoot}",
-"remote": true
-```
-
-This will attach to the running process managed by gdbserver on localhost:2345. You might
-need to hit the start button in the debug bar at the top first to start the program.
-
-Control over whether the debugger should continue executing on connect can be configured
-by setting `stopAtConnect`.  The default value is `false` so that execution will continue
-after connecting.
-
-### Using ssh for debugging on remote
-
-Debugging using ssh automatically converts all paths between client & server and also optionally
-redirects X11 output from the server to the client.  
-Simply add a `ssh` object in your `launch` request.
-
-```
-"request": "launch",
-"target": "./executable",
-"cwd": "${workspaceRoot}",
-"ssh": {
-	"forwardX11": true,
-	"host": "192.168.178.57",
-	"cwd": "/home/remoteUser/project/",
-	"keyfile": "/path/to/.ssh/key", // OR
-	"password": "password123",
-	"user": "remoteUser",
-	"x11host": "localhost",
-	// x11port may also be specified as string containing only numbers (useful to use configuration variables)
-	"x11port": 6000,
-	// Optional, content will be executed on the SSH host before the debugger call.
-	"bootstrap": "source /home/remoteUser/some-env"
+```json
+{
+  "type": "xsdb-gdb",
+  "request": "attach",
+  "name": "Debug Zynq-7000 Application",
+  "xsdbPath": "C:/Xilinx/SDK/2019.1/bin/xsdb.bat",
+  "hwServerUrl": "tcp:127.0.0.1:3121",
+  "initTargetFilter": "APU*",
+  "targetFilter": "ARM*#0",
+  "jtagCableName": "Digilent JTAG-SMT1 210203859289A",
+  "bitstreamPath": "./hw_platform/top_wrapper.bit",
+  "hwDesignPath": "./hw_platform/system.hdf",
+  "psInitScript": "./hw_platform/ps7_init.tcl",
+  "loadhwMemRanges": ["0x40000000 0xbfffffff"],
+  "forceMemAccess": true,
+  "stopBeforePsInit": true,
+  "resetType": "processor",
+  "boardFamily": "zynq7000",
+  "keepXsdbAlive": true,
+  "gdbpath": "C:/msys64/mingw64/bin/gdb-multiarch.exe",
+  "target": "extended-remote localhost:3000",
+  "executable": "./build/app.elf",
+  "cwd": "${workspaceRoot}",
+  "remote": true,
+  "stopAtConnect": true,
+  "autorun": [
+    "set print pretty on",
+    "set confirm off",
+    "file ./build/app.elf"
+  ]
 }
 ```
 
-`ssh.sourceFileMap` will be used to trim off local paths and map them to the server. This is
-required for basically everything except watched variables or user commands to work.
+## Debugger types
 
-For backward compatibility you can also use `cwd` and `ssh.cwd` for the mapping, this is only used
-if the newer `ssh.sourceFileMap` is not configured.
+### `xsdb-gdb`
 
-For X11 forwarding to work you first need to enable it in your Display Manager and allow the
-connections. To allow connections you can either add an entry for applications or run `xhost +`
-in the console while you are debugging and turn it off again when you are done using `xhost -`.
+Primary Xilinx flow.
 
-Because some builds requires one or more environment files to be sourced before running any
-command, you can use the `ssh.bootstrap` option to add some extra commands which will be prepended
-to the debugger call (using `&&` to join both).
+Use this when you want:
 
-### Debugging a process from a different user (especially root/system processes)
+- XSDB board init
+- FPGA programming
+- PS initialization
+- GDB source-level debugging
 
-To debug a program that needs additional privileges you may use one of the two approaches:
+### `gdb`
 
-1. start vscode with the necessary rights (so both the program and the started debugger instance will
-   have root rights) - `sudo code` / `sudo codium` or "start as admin".  
-   Note that this has a lot of security implications and will have the user settings of vscode for this user.
-3. preferred: use a small wrapper script that calls `sudo gdb $*` / `runas /profile /user:admin-user`
-   (or the debugger of your choice) and configure this extension to use it (for example with `gdbpath`)
+Use for generic embedded/native GDB workflows that do not need XSDB orchestration.
 
-### Extra Debugger Arguments
+### `lldb`
 
-Additional arguments can be supplied to the debugger if needed.  These will be added when
-the debugger executable (e.g., gdb, lldb-mi, etc.) is launched.  Extra debugger arguments
-are supplied via the `debugger_args` setting.  Note that the behavior of escaping these
-options depends on the environment in which the debugger is started.  For non-SSH
-debugging, the options are passed directly to the application and therefore no escaping is
-necessary (other than what is necessary for the JSON configuration). However, as a result
-of the options being passed directly to the application, care must be taken to place
-switches and switch values as separate entities in `debugger_args`, if they would normally
-be separated by a space.   For example, supplying the option and value
-`-iex "set $foo = \"bar\""` would consist of the following `debugger_args`:
-```json
-"debugger_args" : ["-iex", "set $foo = \"bar\""]
+Use for LLDB-based native debugging.
+
+### `mago`
+
+Use for Mago-MI workflows on supported Windows targets.
+
+## Xilinx-specific launch fields
+
+- `xsdbPath`
+- `hwServerUrl`
+- `initTargetFilter`
+- `targetFilter`
+- `jtagCableName`
+- `bitstreamPath`
+- `ltxPath`
+- `hwDesignPath`
+- `loadhwMemRanges`
+- `psInitScript`
+- `initScript`
+- `forceMemAccess`
+- `stopBeforePsInit`
+- `resetType`
+- `boardFamily`
+- `keepXsdbAlive`
+- `xsdbAutorun`
+- `registerPreset`
+- `peripheralWatch`
+- `breakpointAutoReapply`
+- `freertosAwareness`
+- `mapFilePath`
+- `xsdbTraceCommands`
+
+Full Xilinx-focused details and recipes are in `README_zynq.md`.
+
+## Debug Console usage
+
+In an active `xsdb-gdb` session, send XSDB commands directly from the Debug Console:
+
+```text
+xsdb: targets
+xsdb: mrd 0xF8000000 10
+xsdb: rst -processor
+xsdb: trace
 ```
-If `=` is used to associate switches with their values, than the switch and value should
-be placed together instead.  In fact, the following example shows 4 different ways in
-which to specify the same switch and value, using both short and long format, as well as
-switch values supplied as a separate parameter or supplied via the `=`:
-- ```json
-  "debugger_args" : ["-iex", "set $foo = \"bar\""]
-  ```
-- ```json
-  "debugger_args" : ["-iex=set $foo = \"bar\""]
-  ```
-- ```json
-  "debugger_args" : ["--init-eval-command", "set $foo = \"bar\""]
-  ```
-- ```json
-  "debugger_args" : ["--init-eval-command=set $foo = \"bar\""]
-  ```
-Where escaping is really necessary is when running the debugger over SSH.  In this case,
-the options are not passed directly to the application, but are instead combined with the
-application name, joined together with any other options, and sent to the remote system to
-be parsed and executed.  Thus, depending on the remote system, different escaping may be
-necessary.  The following shows how the same command as above needs to be escaped
-differently based on whether the remote system is a POSIX or a Windows system.
-- SSH to Linux machine:
-  ```json
-  "debugger_args": ["-iex", "'set $foo = \"bar\"'"]
-  ```
-- SSH to Windows machine:
-  ```json
-  "debugger_args": ["-iex", "\"set $foo = \\\"bar\\\"\""]
-  ```
-You may need to experiment to find the correct escaping necessary for the command to be
-sent to the debugger as you intended.
 
-### LogMessage
+MI commands for the backend debugger can still be sent with `-`.
 
-LogMessage will print a message in the debug console when breakpoint is hit. Expressions within {} are interpolated.
+## Command Palette commands
 
-![LogMessage](images/logMessage.gif)
+- XSDB: Program FPGA Bitstream
+- XSDB: Reset Board
+- XSDB: Read Memory
+- XSDB: Write Memory
+- XSDB: Send Command
+- XSDB: Quick Reset
+- XSDB: Reset Processor
+- XSDB: Reset System
+- XSDB: Hex Memory Editor
+- UART: Connect Serial Terminal
+- UART: Disconnect Serial Terminal
+- UART: Toggle Connect/Disconnect
+- Telnet: Connect
+- Telnet: Disconnect
+- Telnet: Toggle Connect/Disconnect
+- TCP: Connect (Raw)
+- TCP: Disconnect (Raw)
+- TCP: Toggle Connect/Disconnect (Raw)
+- Xilinx Native Debug: Examine Memory Location
 
-## [Issues](https://github.com/WebFreak001/code-debug)
+## Quick Connect Buttons
+
+Status bar buttons are shown for quick terminal access:
+
+- UART button: click to connect if disconnected, or disconnect if connected
+- Telnet button: click to connect if disconnected, or disconnect if connected
+- TCP button: click to connect if disconnected, or disconnect if connected
+
+These buttons are always visible after extension activation and are intended for
+fast board-console workflows.
+
+## UART Serial Terminal
+
+The extension includes a built-in UART serial terminal that integrates into the VS Code Terminal panel.
+
+### Usage
+
+1. Open the Command Palette and run **UART: Connect Serial Terminal**
+2. Select a COM port (auto-detected) or enter one manually
+3. Enter a baud rate (default: 115200)
+4. The terminal opens in the VS Code Terminal panel with full I/O
+
+### Serial tool selection
+
+The extension spawns an external tool for serial communication to avoid native npm dependencies:
+
+- **Windows**: `plink.exe` (PuTTY CLI) or PowerShell `System.IO.Ports.SerialPort`
+- **Linux/macOS**: `picocom`, `minicom`, or `screen` (auto-detected in PATH order)
+
+Configure the preferred tool via `xilinx-debug.serial.externalTool` in settings.
+
+### Configuration
+
+| Setting | Default | Description |
+|---|---|---|
+| `xilinx-debug.serial.defaultBaudRate` | `115200` | Default baud rate |
+| `xilinx-debug.serial.defaultPort` | `""` | Default serial port |
+| `xilinx-debug.serial.externalTool` | `"auto"` | Tool to use: auto, plink, picocom, screen, minicom, powershell |
+
+## Telnet Terminal
+
+A built-in Telnet terminal using Node.js `net.Socket` with inline IAC negotiation handling.
+
+### Usage
+
+1. Open the Command Palette and run **Telnet: Connect**
+2. Enter host (default: `127.0.0.1`) and port (default: `23`)
+3. The session opens in the VS Code Terminal panel
+
+### Configuration
+
+| Setting | Default | Description |
+|---|---|---|
+| `xilinx-debug.telnet.defaultHost` | `"127.0.0.1"` | Default Telnet host |
+| `xilinx-debug.telnet.defaultPort` | `23` | Default Telnet port |
+
+## Raw TCP Terminal
+
+A built-in raw TCP terminal for plain TCP streams (no Telnet negotiation), ideal for lwIP TCP console servers.
+
+### Usage
+
+1. Open the Command Palette and run **TCP: Connect (Raw)**
+2. Enter host (default: `127.0.0.1`) and port (default: `5000`)
+3. The raw TCP session opens in the VS Code Terminal panel
+
+### Configuration
+
+| Setting | Default | Description |
+|---|---|---|
+| `xilinx-debug.tcp.defaultHost` | `"127.0.0.1"` | Default raw TCP host |
+| `xilinx-debug.tcp.defaultPort` | `5000` | Default raw TCP port |
+
+## Hex Memory Editor
+
+A read/write hex memory editor webview for inspecting and modifying memory during debug sessions.
+
+### Usage
+
+1. Open the Command Palette and run **XSDB: Hex Memory Editor**
+2. Enter a start address (hex, e.g. `0xF8000000`) and byte count
+3. The hex editor webview opens with:
+   - Offset column, hex bytes (16 per row), and ASCII column
+   - Click any byte to edit it (modified bytes are highlighted)
+   - **Write** button to commit changes via XSDB
+   - **Refresh** button to re-read the range
+   - **Go to address** and byte count inputs for navigation
+
+Requires an active `xsdb-gdb` debug session.
+
+### Configuration
+
+| Setting | Default | Description |
+|---|---|---|
+| `xilinx-debug.hexEditor.defaultByteCount` | `256` | Default number of bytes to read |
+
+## Quick Board Reset
+
+Quick reset buttons that appear during an active `xsdb-gdb` debug session:
+
+- **Status bar item**: A `$(debug-restart) Reset Board` button appears in the status bar during `xsdb-gdb` sessions
+- **Debug toolbar**: A reset button appears in the debug toolbar
+- **Command Palette**: `XSDB: Quick Reset`, `XSDB: Reset Processor`, `XSDB: Reset System`
+
+The quick reset uses the configured `xilinx-debug.xsdb.defaultResetType` setting (default: `processor`) without prompting.
+
+### Configuration
+
+| Setting | Default | Description |
+|---|---|---|
+| `xilinx-debug.xsdb.defaultResetType` | `"processor"` | Default reset type for quick reset: processor or system |
+
+## Recommended attach behavior
+
+For attach sessions, avoid GDB `load` unless the remote target explicitly supports it.
+
+A safe attach setup is usually:
+
+- `set print pretty on`
+- `set confirm off`
+- `file ./build/app.elf`
+
+## Troubleshooting
+
+### XSDB init says files are missing
+
+Paths are validated before XSDB starts.
+
+On Windows, relative paths are resolved against `cwd`.
+
+Check:
+
+- `cwd`
+- `bitstreamPath`
+- `hwDesignPath`
+- `psInitScript`
+- `initScript`
+
+### GDB connect fails with `extended-remote`
+
+Use either:
+
+- `target: "extended-remote localhost:3000"`
+- or `target: "localhost:3000"`
+
+The extension now handles `extended-remote` correctly in remote attach flows.
+
+### FPGA programs but software debug does not start
+
+Check:
+
+- your GDB server is running on the expected port
+- the target core selected by `targetFilter` is correct
+- your ELF path is correct
+- your attach `autorun` only loads symbols unless remote load is supported
+
+## Documentation map
+
+- `README_zynq.md`: Xilinx and XSDB guide, recipes, and advanced configuration
+- `HACKING.md`: development notes for working on the extension itself
+- `CHANGELOG.md`: project history
+
+## Building
+
+- `npm run vscode:prepublish`
+- `npx vsce package`
+
+## Authors and credits
+
+### Original author
+
+This project is based on the original work by WebFreak.
+
+Original upstream/project base:
+
+- WebFreak / WebFreak001
+- Repository: [WebFreak001/code-debug](https://github.com/WebFreak001/code-debug)
+
+This fork/customized version extends that base toward Xilinx-focused embedded debugging in Visual Studio Code.
