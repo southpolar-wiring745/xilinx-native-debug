@@ -69,7 +69,7 @@ The main Xilinx workflow is provided by the `xsdb-gdb` debugger type:
 - Zynq UltraScale+ MPSoC
 - Versal
 - FPGA-only bitstream/program flows
-- MicroBlaze-based systems
+- MicroBlaze-based systems (not tested)
 
 ## Prerequisites
 
