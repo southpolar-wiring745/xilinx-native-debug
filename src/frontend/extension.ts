@@ -11,6 +11,8 @@ import { HexEditorPanel } from "./hex_editor";
 import { ProjectWizardPanel } from "./project_wizard";
 import { ClockPowerPanel } from "./clock_power_panel";
 import { HwMinimapPanel } from "./hw_minimap_panel";
+import { RegisterDeepDivePanel } from "./register_deepdive_panel";
+import { XdcConstraintsPanel } from "./xdc_constraints_panel";
 
 // Active terminal references for disconnect commands
 let activeSerialTerminal: vscode.Terminal | undefined;
@@ -50,6 +52,8 @@ class XilinxToolsProvider implements vscode.TreeDataProvider<XilinxToolsItem> {
 				new XilinxToolsItem("Hex Memory Editor", vscode.TreeItemCollapsibleState.None, [], "code-debug.hexEditor.open"),
 				new XilinxToolsItem("Clock & Power Monitor", vscode.TreeItemCollapsibleState.None, [], "code-debug.clockPower.open"),
 				new XilinxToolsItem("Hardware Mini-Map", vscode.TreeItemCollapsibleState.None, [], "code-debug.hwMinimap.open"),
+				new XilinxToolsItem("Register Deep Dive", vscode.TreeItemCollapsibleState.None, [], "code-debug.registerDeepDive.open"),
+				new XilinxToolsItem("XDC Constraints", vscode.TreeItemCollapsibleState.None, [], "code-debug.xdcConstraints.open"),
 			]),
 			new XilinxToolsItem("XSDB", vscode.TreeItemCollapsibleState.Expanded, [
 				new XilinxToolsItem("Program FPGA", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.programFPGA"),
@@ -150,6 +154,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// -- Hardware Mini-Map Panel -----------------------------------------
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.hwMinimap.open", () => HwMinimapPanel.createOrShow(context.extensionUri)));
+
+	// -- Register Deep Dive Panel ----------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.registerDeepDive.open", () => RegisterDeepDivePanel.createOrShow(context.extensionUri)));
+
+	// -- XDC Constraints Panel -------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xdcConstraints.open", () => XdcConstraintsPanel.createOrShow(context.extensionUri)));
 
 	// -- Quick Reset Buttons --------------------------------------------
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.quickReset", xsdbQuickReset));

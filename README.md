@@ -46,6 +46,9 @@ The main Xilinx workflow is provided by the `xsdb-gdb` debugger type:
 - board reset commands from the Command Palette
 - clock and power status monitor panel (Zynq-7000/ZynqMP, Versal stub)
 - interactive hardware mini-map dashboard from `.hdf`/`.xsa`/`.hwh` with live state overlay
+- register deep-dive panel with bit-level SVD-style bitfield inspection and live read/write
+- XDC constraints viewer with pin assignment tables, clock summaries, and visual pin map
+- AXI bus health monitor that reads interconnect error registers and highlights faults on the mini-map
 - hardware handoff project setup wizard from `.hdf`/`.xsa`
 - optional XSDB command tracing
 - optional automatic crash analyzer for ARM fault registers
@@ -211,6 +214,8 @@ MI commands for the backend debugger can still be sent with `-`.
 - XSDB: Hex Memory Editor
 - XSDB: Clock & Power Monitor
 - Xilinx: Hardware Mini-Map
+- Xilinx: Register Deep Dive
+- Xilinx: XDC Constraints Viewer
 - Xilinx: Project Setup Wizard
 - UART: Connect Serial Terminal
 - UART: Disconnect Serial Terminal
@@ -371,12 +376,15 @@ AXI bus connections are shown as directional arrows. IRQ lines use dashed stylin
 
 ### Interactive Features
 
-- **Hover tooltip**: Shows base address, address range, clock frequency, IRQ number, VLNV, and IP version.
+- **Hover tooltip**: Shows base address, address range, clock frequency, IRQ number, VLNV, and IP version. When XDC constraints are loaded, also shows pin assignments for the hovered IP block.
 - **Single click**: Opens a detail sidebar with full metadata, address map, and bus connections for the selected node.
 - **Double click**: Jumps to `xparameters.h` or the driver initialization code in the C/C++ workspace.
 - **View Registers**: Opens the Hex Memory Editor at the selected IP block's base address.
+- **Deep Dive Registers**: Opens the Register Deep Dive panel (see below) focused on the selected peripheral's bitfield-level register map.
 - **Pan & zoom**: Mouse drag to pan, scroll wheel to zoom, plus dedicated zoom buttons.
 - **Fit / Re-layout**: Toolbar buttons to fit the view or recalculate layout.
+- **Load XDC**: Loads a `.xdc` constraints file and overlays pin assignment data onto nodes. Also opens the XDC Constraints Viewer.
+- **AXI Health**: Reads interconnect error registers (AFI, XPPU, XMPU) and highlights AXI edges in red if faults are detected.
 - **Refresh State**: Polls XSDB for current clock/power state and overlays it on the graph.
 - **Auto-refresh on Break**: Toggle to automatically poll hardware state when the debugger stops.
 
@@ -394,6 +402,90 @@ The Hardware Mini-Map is available as both:
 
 - A standalone webview panel (via Command Palette or Activity Bar tree item)
 - A view entry in the **Xilinx Debug** activity bar sidebar
+
+## Register Deep Dive
+
+A bit-level register inspection panel that maps IP blocks to named bitfield definitions. Sourced from Zynq-7000 (UG585) and ZynqMP (UG1087) Technical Reference Manuals.
+
+### Features
+
+- **Peripheral Tree**: Lists all known register maps (UART, SPI, GPIO, SLCR) for the loaded platform. Peripherals are automatically matched to HW topology nodes by base address or IP type.
+- **Register List**: Each register shows its name, offset, absolute address, and current 32-bit hex value.
+- **Bitfield Expansion**: Click any register to expand it and see:
+  - A visual 32-bit bar with individual bits colored by value (blue = 1, dark = 0).
+  - A table of named bitfields with bit ranges, decoded values, access type (RW/RO/WO/W1C), and description.
+  - Enum decoding where applicable (e.g. ARM_CLK_CTRL.SRCSEL → `ARM_PLL`).
+- **Live Read / Write**: Read a single register or all registers for a peripheral via XSDB. Write new values to writable registers directly from the panel.
+- **Mini-Map Integration**: The "Deep Dive Registers" button on the Mini-Map detail panel opens this view focused on the selected IP block.
+
+### Supported Peripherals
+
+| Peripheral | Zynq-7000 Base | ZynqMP Base |
+|------------|---------------|-------------|
+| UART0 | 0xE0000000 | 0xFF000000 |
+| UART1 | 0xE0001000 | 0xFF010000 |
+| SPI0 | 0xE0006000 | 0xFF040000 |
+| SPI1 | 0xE0007000 | 0xFF050000 |
+| GPIO | 0xE000A000 | 0xFF0A0000 |
+| SLCR | 0xF8000000 | — |
+
+### Usage
+
+1. Run **Xilinx: Register Deep Dive** from the Command Palette, or click **Register Deep Dive** in the Xilinx Debug activity bar.
+2. If a hardware design is loaded via the Mini-Map, peripherals are automatically populated.
+3. Select a peripheral from the left tree. Registers appear in the center pane.
+4. Click a register to expand bitfields. Values read from hardware appear live.
+5. Use the **Write** button to modify writable register fields during a debug session.
+
+## XDC Constraints Viewer
+
+An interactive viewer for Xilinx Design Constraints (`.xdc`) files, displaying FPGA pin assignments, I/O standards, clock constraints, and debug core configurations.
+
+### Tabs
+
+- **Pin Assignments**: Sortable, filterable table of all `set_property PACKAGE_PIN` / `IOSTANDARD` / `SLEW` / `DRIVE` constraints. I/O standards are color-coded (LVCMOS33 = green, LVCMOS25 = blue, LVCMOS18 = amber, LVDS = red).
+- **Clock Constraints**: Card-based summary of `create_clock` definitions showing clock name, port, period, frequency in MHz, and waveform parameters.
+- **Pin Map**: A visual grid of all assigned package pins, color-coded by I/O standard. Hover for full constraint details.
+- **Debug Cores**: Lists `connect_debug_port` and debug core property constraints.
+
+### Features
+
+- **Search/Filter**: Real-time filtering of the pin table by port name, package pin, or I/O standard.
+- **Column Sorting**: Click any column header to sort ascending/descending.
+- **Mini-Map Integration**: The "Load XDC" button on the Mini-Map toolbar loads constraints into both the Mini-Map (as pin overlays on node tooltips) and this dedicated viewer.
+
+### Usage
+
+1. Run **Xilinx: XDC Constraints Viewer** from the Command Palette, or click **XDC Constraints** in the Xilinx Debug activity bar.
+2. Click **Load .xdc File** and select a `.xdc` file.
+3. Browse the four tabs for pin assignments, clock constraints, pin map visualization, and debug cores.
+
+## AXI Bus Health Monitor
+
+Integrated into the Hardware Mini-Map, the AXI Bus Health feature reads interconnect error registers and highlights faults on AXI bus edges.
+
+### What It Reads
+
+**Zynq-7000**:
+- AFI0–AFI3 status registers (AXI HP ports) at 0xF8008000–0xF800B000
+- DEVC ISR (AXI write/read timeout, PCAP-to-DMA length errors) at 0xF800200C
+
+**ZynqMP**:
+- LPD XPPU ISR (invalid APB address, permission violations) at 0xFF980010
+- FPD XMPU ISR (read/write permission violations, poisoned transactions) at 0xFD000010
+- AFIFM0/1 ISR (write response errors on HPC ports) at 0xFD360000/0xFD370000
+
+### Visual Feedback
+
+- **No faults**: Status bar shows "AXI: OK"
+- **Faults detected**: All AXI edges flash red with increased stroke width, and an error bar shows the specific register and fault bit names
+
+### Usage
+
+1. Load a hardware design in the Mini-Map.
+2. Start an `xsdb-gdb` debug session.
+3. Click **AXI Health** in the Mini-Map toolbar.
+4. Fault details appear in the error bar; edges are visually highlighted.
 
 ## Quick Board Reset
 

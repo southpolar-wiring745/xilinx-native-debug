@@ -5,6 +5,10 @@ import * as path from "path";
 import { getHwMinimapHtml } from "./hw_minimap_html";
 import { parseXilinxContainer } from "../hdf-xsa-parser";
 import { buildTopology, HwTopology, RuntimeNodeState } from "../backend/hw_topology";
+import { RegisterDeepDivePanel } from "./register_deepdive_panel";
+import { XdcConstraintsPanel } from "./xdc_constraints_panel";
+import { getAxiErrorAddresses, decodeAxiHealth } from "../backend/axi_health";
+import { parseXdc } from "../backend/xdc_parser";
 
 /**
  * Manages the Hardware Mini-Map webview panel.
@@ -79,6 +83,15 @@ export class HwMinimapPanel {
 						break;
 					case "jumpToSource":
 						await this.handleJumpToSource(msg.nodeId);
+						break;
+					case "deepDiveRegisters":
+						await this.handleDeepDiveRegisters(msg.nodeId);
+						break;
+					case "loadXdc":
+						await this.handleLoadXdc();
+						break;
+					case "checkAxiHealth":
+						await this.handleCheckAxiHealth();
 						break;
 				}
 			},
@@ -308,6 +321,92 @@ export class HwMinimapPanel {
 				}
 			}
 			vscode.window.showInformationMessage(`No source reference found for ${nodeId}`);
+		}
+	}
+
+	private async handleDeepDiveRegisters(nodeId: string): Promise<void> {
+		if (!this.topology) return;
+		RegisterDeepDivePanel.openForNode(this.extensionUri, this.topology, nodeId);
+	}
+
+	private async handleLoadXdc(): Promise<void> {
+		const files = await vscode.window.showOpenDialog({
+			canSelectMany: false,
+			filters: {
+				"Xilinx Design Constraints": ["xdc"],
+				"All Files": ["*"],
+			},
+			openLabel: "Load XDC Constraints",
+		});
+		if (!files || files.length === 0) return;
+
+		try {
+			const text = fs.readFileSync(files[0].fsPath, "utf-8");
+			const xdc = parseXdc(text);
+			this.panel.webview.postMessage({
+				type: "xdcPinOverlay",
+				pins: xdc.pins,
+			});
+
+			// Also open the XDC constraints viewer
+			XdcConstraintsPanel.loadFile(this.extensionUri, files[0].fsPath);
+		} catch (e: any) {
+			this.panel.webview.postMessage({
+				type: "error",
+				message: `Failed to parse XDC: ${e.message || e}`,
+			});
+		}
+	}
+
+	private async handleCheckAxiHealth(): Promise<void> {
+		if (!this.topology) {
+			this.panel.webview.postMessage({
+				type: "error",
+				message: "No hardware design loaded.",
+			});
+			return;
+		}
+
+		const session = vscode.debug.activeDebugSession;
+		if (!session || session.type !== "xsdb-gdb") {
+			this.panel.webview.postMessage({
+				type: "error",
+				message: "No active xsdb-gdb debug session.",
+			});
+			return;
+		}
+
+		try {
+			const addrs = getAxiErrorAddresses(this.topology.platform);
+			const regValues: { name: string; address: number; value: number }[] = [];
+
+			for (const a of addrs) {
+				try {
+					const resp = await session.customRequest("xsdb-readMemory", {
+						address: a.address,
+						length: 4,
+					});
+					const value = resp?.value ?? resp?.data?.[0] ?? 0;
+					regValues.push({ name: a.name, address: a.address, value });
+				} catch {
+					// Skip unreadable registers
+				}
+			}
+
+			const axiEdgeIds = this.topology.edges
+				.filter(e => e.kind === "axi")
+				.map(e => e.id);
+			const report = decodeAxiHealth(this.topology.platform, regValues, axiEdgeIds);
+
+			this.panel.webview.postMessage({
+				type: "axiHealth",
+				edgeHealth: report.edgeHealth,
+			});
+		} catch (e: any) {
+			this.panel.webview.postMessage({
+				type: "error",
+				message: `AXI health check failed: ${e.message || e}`,
+			});
 		}
 	}
 

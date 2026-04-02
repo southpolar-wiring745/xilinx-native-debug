@@ -52,6 +52,8 @@
 		"onCommand:code-debug.xsdb.loadMemory",
 		"onCommand:code-debug.clockPower.open",
 		"onCommand:code-debug.hwMinimap.open",
+		"onCommand:code-debug.registerDeepDive.open",
+		"onCommand:code-debug.xdcConstraints.open",
 		"onView:xilinxDebugView",
 		"onView:xilinxHwMinimapView"
 	],
@@ -171,6 +173,14 @@
 			{
 				"command": "code-debug.hwMinimap.open",
 				"title": "Xilinx: Hardware Mini-Map"
+			},
+			{
+				"command": "code-debug.registerDeepDive.open",
+				"title": "Xilinx: Register Deep Dive"
+			},
+			{
+				"command": "code-debug.xdcConstraints.open",
+				"title": "Xilinx: XDC Constraints Viewer"
 			}
 		],
 		"viewsContainers": {

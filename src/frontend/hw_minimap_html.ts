@@ -144,6 +144,9 @@ body { font-family: var(--vscode-font-family, sans-serif); font-size: 13px; colo
 	<button id="btnFitView" title="Fit graph to view">Fit</button>
 	<button id="btnResetLayout" title="Re-layout the graph">Re-layout</button>
 	<div class="sep"></div>
+	<button id="btnLoadXdc" title="Load .xdc constraints for pin overlay">Load XDC</button>
+	<button id="btnCheckAxi" title="Read AXI interconnect error registers">AXI Health</button>
+	<div class="sep"></div>
 	<span class="status" id="statusLabel">No design loaded</span>
 </div>
 
@@ -205,6 +208,7 @@ body { font-family: var(--vscode-font-family, sans-serif); font-size: 13px; colo
 		</div>
 		<div class="dp-actions">
 			<button id="btnViewRegisters">View Registers</button>
+			<button id="btnDeepDiveRegs">Deep Dive Registers</button>
 			<button id="btnJumpToSource">Jump to xparameters.h</button>
 		</div>
 	</div>
@@ -261,10 +265,21 @@ body { font-family: var(--vscode-font-family, sans-serif); font-size: 13px; colo
 			vscode.postMessage({ type: 'viewRegisters', nodeId: selectedNodeId });
 		}
 	});
+	document.getElementById('btnDeepDiveRegs').addEventListener('click', () => {
+		if (selectedNodeId) {
+			vscode.postMessage({ type: 'deepDiveRegisters', nodeId: selectedNodeId });
+		}
+	});
 	document.getElementById('btnJumpToSource').addEventListener('click', () => {
 		if (selectedNodeId) {
 			vscode.postMessage({ type: 'jumpToSource', nodeId: selectedNodeId });
 		}
+	});
+	document.getElementById('btnLoadXdc').addEventListener('click', () => {
+		vscode.postMessage({ type: 'loadXdc' });
+	});
+	document.getElementById('btnCheckAxi').addEventListener('click', () => {
+		vscode.postMessage({ type: 'checkAxiHealth' });
 	});
 
 	document.getElementById('chkAutoRefresh').addEventListener('change', (e) => {
@@ -658,6 +673,22 @@ body { font-family: var(--vscode-font-family, sans-serif); font-size: 13px; colo
 		if (n.hwVersion) {
 			html += ttRow('Version', n.hwVersion);
 		}
+		// XDC pin overlay data
+		if (xdcPinData) {
+			const nodePins = xdcPinData.filter(p => {
+				const portBase = (p.port || '').replace(/\\[\\d+\\]$/, '').toLowerCase();
+				return n.id.toLowerCase().includes(portBase) || portBase.includes(n.id.toLowerCase());
+			});
+			if (nodePins.length > 0) {
+				html += '<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px">';
+				html += '<div style="font-weight:600;font-size:11px;opacity:0.8">Pin Constraints</div>';
+				for (const p of nodePins.slice(0, 5)) {
+					html += ttRow(p.port, (p.packagePin || '?') + (p.ioStandard ? ' [' + p.ioStandard + ']' : ''));
+				}
+				if (nodePins.length > 5) html += '<div style="opacity:0.5;font-size:10px">+' + (nodePins.length - 5) + ' more...</div>';
+				html += '</div>';
+			}
+		}
 		tooltip.innerHTML = html;
 		tooltip.style.display = 'block';
 
@@ -772,6 +803,48 @@ body { font-family: var(--vscode-font-family, sans-serif); font-size: 13px; colo
 		setTimeout(() => { errorBar.style.display = 'none'; }, 8000);
 	}
 
+	// ─── AXI Health overlay ───────────────────────────────────────────
+
+	function applyAxiHealth(edgeHealth) {
+		if (!edgeHealth || !Array.isArray(edgeHealth)) return;
+		const faultEdges = new Set();
+		for (const eh of edgeHealth) {
+			if (eh.hasError) faultEdges.add(eh.edgeId);
+		}
+		// Re-color edges in SVG
+		const paths = graphRoot.querySelectorAll('path');
+		for (let i = 0; i < layoutEdges.length && i < paths.length; i++) {
+			const le = layoutEdges[i];
+			const path = paths[i];
+			if (faultEdges.has(le.id)) {
+				path.setAttribute('stroke', 'var(--error)');
+				path.setAttribute('stroke-width', '3');
+				path.setAttribute('opacity', '1');
+				// Pulse animation
+				path.style.animation = 'none';
+				path.offsetHeight; // reflow
+				path.style.animation = '';
+			}
+		}
+		if (faultEdges.size > 0) {
+			showError('AXI fault detected on ' + faultEdges.size + ' edge(s)!');
+		} else {
+			statusLabel.textContent = statusLabel.textContent.replace(/ \\| AXI:.*/, '') + ' | AXI: OK';
+		}
+	}
+
+	// ─── XDC pin data overlay ─────────────────────────────────────────
+
+	let xdcPinData = null;
+
+	function applyXdcOverlay(pins) {
+		if (!pins || !Array.isArray(pins)) return;
+		xdcPinData = pins;
+		// Re-render to update tooltips
+		if (topology) render();
+		statusLabel.textContent = statusLabel.textContent.replace(/ \\| XDC:.*/, '') + ' | XDC: ' + pins.length + ' pins';
+	}
+
 	// ─── Messages from extension ──────────────────────────────────────
 
 	window.addEventListener('message', event => {
@@ -795,6 +868,12 @@ body { font-family: var(--vscode-font-family, sans-serif); font-size: 13px; colo
 				break;
 			case 'error':
 				showError(msg.message);
+				break;
+			case 'axiHealth':
+				applyAxiHealth(msg.edgeHealth);
+				break;
+			case 'xdcPinOverlay':
+				applyXdcOverlay(msg.pins);
 				break;
 		}
 	});
