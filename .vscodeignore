@@ -22,3 +22,10 @@ cspell-dict.txt
 HACKING.md
 tsconfig.json
 vsc-extension-quickstart.md
+freertos_ports/**
+xsa_example/**
+hdf_example/**
+example.xdc
+*.vsix
+registers/**
+*.xdc

@@ -11,3 +11,4 @@ registers/
 freertos_ports/
 hdf_example/
 xsa_example/
+*.xdc
