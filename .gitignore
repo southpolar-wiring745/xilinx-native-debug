@@ -9,3 +9,5 @@ node_modules
 *.prompt.md
 registers/
 freertos_ports/
+hdf_example/
+xsa_example/

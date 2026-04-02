@@ -45,6 +45,7 @@ The main Xilinx workflow is provided by the `xsdb-gdb` debugger type:
 - XSDB memory dump/load (`.bin`) commands from the Command Palette
 - board reset commands from the Command Palette
 - clock and power status monitor panel (Zynq-7000/ZynqMP, Versal stub)
+- interactive hardware mini-map dashboard from `.hdf`/`.xsa`/`.hwh` with live state overlay
 - hardware handoff project setup wizard from `.hdf`/`.xsa`
 - optional XSDB command tracing
 - optional automatic crash analyzer for ARM fault registers
@@ -209,6 +210,7 @@ MI commands for the backend debugger can still be sent with `-`.
 - XSDB: Reset System
 - XSDB: Hex Memory Editor
 - XSDB: Clock & Power Monitor
+- Xilinx: Hardware Mini-Map
 - Xilinx: Project Setup Wizard
 - UART: Connect Serial Terminal
 - UART: Disconnect Serial Terminal
@@ -339,6 +341,59 @@ Live clock tree and power-domain snapshot from XSDB register reads.
 | Setting | Default | Description |
 |---|---|---|
 | `xilinx-debug.hexEditor.defaultByteCount` | `256` | Default number of bytes to read |
+
+## Hardware Mini-Map
+
+An interactive, real-time visual dashboard within a VS Code webview that represents the hardware architecture of a Xilinx Zynq or MicroBlaze system. The Hardware Mini-Map bridges the gap between the physical hardware (FPGA/Processor) and the C/C++ source code during debugging.
+
+### Data Sources
+
+- **Static topology (design time)**: Parses `.xsa`, `.hdf`, or standalone `.hwh` files to extract the hardware graph. Identifies CPU cores (Cortex-A9/A53/R5, MicroBlaze), memory controllers (DDR, OCM, BRAM), interconnects (AXI), and PL IP blocks (custom IP, DMA, GPIO, etc.).
+- **Dynamic status (runtime)**: Queries hardware state via XSDB during break states. Reads clock control registers and reset registers to determine the aliveness of each peripheral.
+
+### Visual Layout
+
+The graph uses a hierarchical columnar layout:
+
+- **PS Core** (left): Processing system CPU nodes
+- **Interconnect**: AXI interconnect/crossbar nodes
+- **PS Peripherals**: Memory controllers and PS-side peripherals
+- **PL IP Blocks** (right): Programmable logic IP blocks
+
+Nodes are styled by runtime state:
+
+- 🟢 **Active** (green): Clock is running, peripheral is out of reset
+- ⚪ **Inactive** (grey): Clock is gated or peripheral is held in reset
+- 🔴 **Fault** (red): Error state detected
+- ⬜ **Unknown** (dashed): No runtime data available
+
+AXI bus connections are shown as directional arrows. IRQ lines use dashed styling.
+
+### Interactive Features
+
+- **Hover tooltip**: Shows base address, address range, clock frequency, IRQ number, VLNV, and IP version.
+- **Single click**: Opens a detail sidebar with full metadata, address map, and bus connections for the selected node.
+- **Double click**: Jumps to `xparameters.h` or the driver initialization code in the C/C++ workspace.
+- **View Registers**: Opens the Hex Memory Editor at the selected IP block's base address.
+- **Pan & zoom**: Mouse drag to pan, scroll wheel to zoom, plus dedicated zoom buttons.
+- **Fit / Re-layout**: Toolbar buttons to fit the view or recalculate layout.
+- **Refresh State**: Polls XSDB for current clock/power state and overlays it on the graph.
+- **Auto-refresh on Break**: Toggle to automatically poll hardware state when the debugger stops.
+
+### Usage
+
+1. Run **Xilinx: Hardware Mini-Map** from the Command Palette, or click **Hardware Mini-Map** in the Xilinx Debug activity bar.
+2. Click **Load HW Design** and select an `.xsa`, `.hdf`, or `.hwh` file.
+3. The hardware graph is rendered with all discovered modules and connections.
+4. During an active `xsdb-gdb` session, click **Refresh State** to overlay live clock/power status.
+5. Click any node to see its full details. Double-click to jump to source.
+
+### Activity Bar
+
+The Hardware Mini-Map is available as both:
+
+- A standalone webview panel (via Command Palette or Activity Bar tree item)
+- A view entry in the **Xilinx Debug** activity bar sidebar
 
 ## Quick Board Reset
 

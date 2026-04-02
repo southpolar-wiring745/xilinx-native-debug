@@ -10,6 +10,7 @@ import { RawTcpTerminalProvider, RawTcpConfig } from "./raw_tcp_terminal";
 import { HexEditorPanel } from "./hex_editor";
 import { ProjectWizardPanel } from "./project_wizard";
 import { ClockPowerPanel } from "./clock_power_panel";
+import { HwMinimapPanel } from "./hw_minimap_panel";
 
 // Active terminal references for disconnect commands
 let activeSerialTerminal: vscode.Terminal | undefined;
@@ -48,6 +49,7 @@ class XilinxToolsProvider implements vscode.TreeDataProvider<XilinxToolsItem> {
 				new XilinxToolsItem("Project Wizard", vscode.TreeItemCollapsibleState.None, [], "code-debug.projectWizard.open"),
 				new XilinxToolsItem("Hex Memory Editor", vscode.TreeItemCollapsibleState.None, [], "code-debug.hexEditor.open"),
 				new XilinxToolsItem("Clock & Power Monitor", vscode.TreeItemCollapsibleState.None, [], "code-debug.clockPower.open"),
+				new XilinxToolsItem("Hardware Mini-Map", vscode.TreeItemCollapsibleState.None, [], "code-debug.hwMinimap.open"),
 			]),
 			new XilinxToolsItem("XSDB", vscode.TreeItemCollapsibleState.Expanded, [
 				new XilinxToolsItem("Program FPGA", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.programFPGA"),
@@ -145,6 +147,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// -- Clock & Power Panel --------------------------------------------
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.clockPower.open", () => ClockPowerPanel.createOrShow(context.extensionUri)));
+
+	// -- Hardware Mini-Map Panel -----------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.hwMinimap.open", () => HwMinimapPanel.createOrShow(context.extensionUri)));
 
 	// -- Quick Reset Buttons --------------------------------------------
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.quickReset", xsdbQuickReset));

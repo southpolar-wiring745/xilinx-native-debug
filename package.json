@@ -51,7 +51,9 @@
 		"onCommand:code-debug.xsdb.dumpMemory",
 		"onCommand:code-debug.xsdb.loadMemory",
 		"onCommand:code-debug.clockPower.open",
-		"onView:xilinxDebugView"
+		"onCommand:code-debug.hwMinimap.open",
+		"onView:xilinxDebugView",
+		"onView:xilinxHwMinimapView"
 	],
 	"categories": [
 		"Debuggers"
@@ -165,6 +167,10 @@
 			{
 				"command": "code-debug.clockPower.open",
 				"title": "XSDB: Clock & Power Monitor"
+			},
+			{
+				"command": "code-debug.hwMinimap.open",
+				"title": "Xilinx: Hardware Mini-Map"
 			}
 		],
 		"viewsContainers": {
@@ -181,6 +187,11 @@
 				{
 					"id": "xilinxDebugView",
 					"name": "Tools"
+				},
+				{
+					"id": "xilinxHwMinimapView",
+					"name": "Hardware Mini-Map",
+					"type": "webview"
 				}
 			]
 		},
