@@ -11,6 +11,7 @@ import { MI2DebugSession, RunCommand } from './mibase';
 import { DebugSession, InitializedEvent, TerminatedEvent, StoppedEvent, OutputEvent, Thread, StackFrame, Scope, Source, Handles } from 'vscode-debugadapter';
 import { DebugProtocol } from 'vscode-debugprotocol';
 import { MI2, escape } from "./backend/mi2/mi2";
+import { MINode } from './backend/mi_parse';
 import { SSHArguments, ValuesFormattingMode } from './backend/backend';
 import { XSDBClient } from './backend/xsdb/xsdb';
 import { BoardFamily, BOARD_PRESETS, detectBoardFamily } from './backend/xsdb/board_presets';
@@ -18,6 +19,11 @@ import { RegisterPreset, RegisterArchitecture, inferRegisterArchitecture, getReg
 import { XSDBRegisterEntry } from './backend/xsdb/xsdb_parse';
 import { detectFreeRTOS, getFreeRTOSTasks, FreeRTOSTask } from './backend/xsdb/freertos';
 import { parseLinkerMap, MemoryMap } from './backend/xsdb/memory_map';
+import { getClockRegistersForPlatform } from './backend/xsdb/clock_registers';
+import { decodeZynq7000Clocks, decodeZynqMPClocks, decodeVersalClocks, ClockInfo } from './backend/xsdb/clock_decoder';
+import { getPowerRegistersForPlatform, decodeZynqMPPowerStatus, PowerDomainInfo } from './backend/xsdb/power_status';
+import { decodeAArch32Fault, decodeAArch64Fault, formatCrashReport } from './backend/xsdb/crash_analyzer';
+import { analyzeFreeRTOSCrash, formatFreeRTOSCrashReport } from './backend/xsdb/freertos_crash_analyzer';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -67,9 +73,8 @@ export interface XSDBGDBLaunchRequestArguments extends DebugProtocol.LaunchReque
 	freertosAwareness: boolean;
 	mapFilePath: string;
 	xsdbTraceCommands: boolean;
+	crashAnalyzer: boolean;
 }
-
-/** User-configurable peripheral watch entry. */
 export interface PeripheralWatchConfig {
 	name: string;
 	address: string;
@@ -120,6 +125,7 @@ export interface XSDBGDBAttachRequestArguments extends DebugProtocol.AttachReque
 	freertosAwareness: boolean;
 	mapFilePath: string;
 	xsdbTraceCommands: boolean;
+	crashAnalyzer: boolean;
 }
 
 // -----------------------------------------------------------------------
@@ -142,6 +148,7 @@ class XSDBZynqSession extends MI2DebugSession {
 	private registerArchitecture: RegisterArchitecture | undefined;
 	private currentTargetName: string | undefined;
 	private extraVariableHandles = new Handles<string>();
+	private crashAnalyzerEnabled = true;
 
 	private normalizeTargetName(name: string): string {
 		return name
@@ -307,6 +314,7 @@ class XSDBZynqSession extends MI2DebugSession {
 		this.peripheralWatchEntries = args.peripheralWatch || [];
 		this.breakpointAutoReapply = args.breakpointAutoReapply !== false;
 		this.freertosAwareness = !!args.freertosAwareness;
+		this.crashAnalyzerEnabled = args.crashAnalyzer !== false; // default true
 		this.currentTargetName = undefined;
 
 		if (args.mapFilePath) {
@@ -967,6 +975,18 @@ class XSDBZynqSession extends MI2DebugSession {
 			case "xsdb-getMemoryMapInfo":
 				this.handleGetMemoryMapInfo(response, args);
 				return;
+			case "xsdb-dumpMemory":
+				this.handleXsdbDumpMemory(response, args);
+				return;
+			case "xsdb-loadMemory":
+				this.handleXsdbLoadMemory(response, args);
+				return;
+			case "xsdb-readClockPower":
+				this.handleXsdbReadClockPower(response);
+				return;
+			case "xsdb-runCrashAnalyzer":
+				this.handleXsdbRunCrashAnalyzer(response);
+				return;
 			default:
 				super.customRequest(command, response, args);
 		}
@@ -1091,6 +1111,472 @@ class XSDBZynqSession extends MI2DebugSession {
 			};
 		}
 		this.sendResponse(response);
+	}
+
+	// -- Memory Dump/Load handlers ----------------------------------------
+
+	private handleXsdbDumpMemory(response: DebugProtocol.Response, args: { address: number; byteCount: number }): void {
+		if (!this.xsdb) {
+			this.sendErrorResponse(response, 120, "XSDB is not running");
+			return;
+		}
+
+		const wordCount = Math.ceil(args.byteCount / 4);
+		const chunkSize = 1024; // words per read
+		const allData: number[] = [];
+
+		const readChunks = async (): Promise<void> => {
+			for (let offset = 0; offset < wordCount; offset += chunkSize) {
+				const count = Math.min(chunkSize, wordCount - offset);
+				const addr = args.address + offset * 4;
+				const entries = await this.xsdb!.readMem(addr, count);
+				for (const entry of entries) {
+					// Convert 32-bit word to 4 bytes (little-endian)
+					allData.push(entry.value & 0xFF);
+					allData.push((entry.value >> 8) & 0xFF);
+					allData.push((entry.value >> 16) & 0xFF);
+					allData.push((entry.value >> 24) & 0xFF);
+				}
+			}
+		};
+
+		readChunks().then(
+			() => {
+				// Trim to exact byte count
+				const trimmed = allData.slice(0, args.byteCount);
+				this.handleMsg("stdout", `[XSDB] Memory dump: ${trimmed.length} bytes from 0x${args.address.toString(16)}\n`);
+				(response as any).body = { data: trimmed };
+				this.sendResponse(response);
+			},
+			(err) => this.sendErrorResponse(response, 126, `Memory dump failed: ${err}`),
+		);
+	}
+
+	private handleXsdbLoadMemory(response: DebugProtocol.Response, args: { address: number; data: number[] }): void {
+		if (!this.xsdb) {
+			this.sendErrorResponse(response, 120, "XSDB is not running");
+			return;
+		}
+
+		// Convert byte array to 32-bit words (little-endian)
+		const words: number[] = [];
+		for (let i = 0; i < args.data.length; i += 4) {
+			const b0 = args.data[i] ?? 0;
+			const b1 = args.data[i + 1] ?? 0;
+			const b2 = args.data[i + 2] ?? 0;
+			const b3 = args.data[i + 3] ?? 0;
+			words.push((b3 << 24) | (b2 << 16) | (b1 << 8) | b0);
+		}
+
+		const writeChunks = async (): Promise<void> => {
+			for (let i = 0; i < words.length; i++) {
+				const addr = args.address + i * 4;
+				await this.xsdb!.writeMem(addr, words[i]);
+			}
+		};
+
+		writeChunks().then(
+			() => {
+				this.handleMsg("stdout", `[XSDB] Memory load: ${args.data.length} bytes written to 0x${args.address.toString(16)}\n`);
+				this.sendResponse(response);
+			},
+			(err) => this.sendErrorResponse(response, 127, `Memory load failed: ${err}`),
+		);
+	}
+
+	// -- Clock & Power handler --------------------------------------------
+
+	private handleXsdbReadClockPower(response: DebugProtocol.Response): void {
+		if (!this.xsdb) {
+			this.sendErrorResponse(response, 120, "XSDB is not running");
+			return;
+		}
+
+		const platform = typeof this.boardFamily === "string" ? this.boardFamily : "zynq7000";
+		const clockRegDefs = getClockRegistersForPlatform(platform);
+		const powerRegDefs = getPowerRegistersForPlatform(platform);
+		const allDefs = [...clockRegDefs, ...powerRegDefs];
+
+		if (allDefs.length === 0) {
+			(response as any).body = { clocks: [], power: [], platform };
+			this.sendResponse(response);
+			return;
+		}
+
+		const readAllRegs = async (): Promise<Map<number, number>> => {
+			const regs = new Map<number, number>();
+			for (const def of allDefs) {
+				try {
+					const entries = await this.xsdb!.readMem(def.address, 1);
+					if (entries.length > 0) {
+						regs.set(def.address, entries[0].value);
+					}
+				} catch {
+					// Skip registers that fail to read
+				}
+			}
+			return regs;
+		};
+
+		readAllRegs().then(
+			(regs) => {
+				let clocks: ClockInfo[] = [];
+				let power: PowerDomainInfo[] = [];
+
+				switch (platform) {
+					case "zynq7000":
+						clocks = decodeZynq7000Clocks(regs);
+						break;
+					case "zynqmp":
+						clocks = decodeZynqMPClocks(regs);
+						power = decodeZynqMPPowerStatus(regs);
+						break;
+					case "versal":
+						clocks = decodeVersalClocks(regs);
+						break;
+				}
+
+				(response as any).body = { clocks, power, platform };
+				this.sendResponse(response);
+			},
+			(err) => this.sendErrorResponse(response, 128, `Clock/Power read failed: ${err}`),
+		);
+	}
+
+	private handleXsdbRunCrashAnalyzer(response: DebugProtocol.Response): void {
+		if (!this.xsdb) {
+			this.sendErrorResponse(response, 120, "XSDB is not running");
+			return;
+		}
+
+		this.runCrashAnalysis().then(
+			(report) => {
+				(response as any).body = {
+					analyzed: true,
+					report: report || null,
+					note: report ? undefined : "No fault registers were set (or they were zero).",
+				};
+				this.sendResponse(response);
+			},
+			(err) => this.sendErrorResponse(response, 129, `Crash analyzer failed: ${err}`),
+		);
+	}
+
+	// -- Crash Analyzer hooks ---------------------------------------------
+
+	protected override stopEvent(info: MINode): void {
+		if (!this.started)
+			this.crashed = true;
+		if (!this.quit) {
+			const event = new StoppedEvent("exception", parseInt(info.record("thread-id")));
+			(event as DebugProtocol.StoppedEvent).body.allThreadsStopped = info.record("stopped-threads") === "all";
+			this.sendEvent(event);
+
+			// Trigger crash analysis asynchronously
+			if (this.crashAnalyzerEnabled) {
+				this.runCrashAnalysis().catch(() => {
+					// Best-effort: don't fail the stop event
+				});
+			}
+		}
+	}
+
+	protected override handlePause(info: MINode): void {
+		super.handlePause(info);
+
+		// Check for signal-based stops that indicate faults
+		if (this.crashAnalyzerEnabled && info) {
+			const signalName = info.record("signal-name");
+			const faultSignals = ["SIGSEGV", "SIGBUS", "SIGILL", "SIGFPE", "SIGABRT"];
+			if (signalName && faultSignals.includes(signalName)) {
+				this.runCrashAnalysis().catch(() => {
+					// Best-effort
+				});
+			}
+		}
+	}
+
+	private async runCrashAnalysis(): Promise<string | undefined> {
+		if (!this.xsdb) return;
+
+		const arch = this.registerArchitecture || inferRegisterArchitecture(this.boardFamily, this.currentTargetName);
+		const platform = this.boardFamily || "unknown";
+
+		try {
+			// ── Strategy 0: FreeRTOS-aware crash detection ───────────────
+			// Inspect the call stack for known FreeRTOS/BSP fatal handlers
+			// and extract handler-specific data via GDB expressions.
+			const freertosReport = await analyzeFreeRTOSCrash(this.miDebugger, platform);
+			if (freertosReport) {
+				const formatted = formatFreeRTOSCrashReport(freertosReport);
+				this.handleMsg("stdout", "\n" + formatted + "\n");
+				return formatted;
+			}
+
+			// ── Strategy 1: bulk rrd (core regs only) ────────────────────
+			const regsOutput = await this.xsdb.readRegs();
+			const coreFlat = this.flattenRegisters(regsOutput);
+
+			// ── Strategy 2: rrd cp / rrd cp15 (coprocessor regs) ─────────
+			const cp15Flat = await this.readCp15Registers();
+
+			// Merge: cp15 values override core when present
+			const flat = new Map<string, string>([...coreFlat, ...cp15Flat]);
+
+			// ── Strategy 3: detect abort mode from CPSR ──────────────────
+			const cpsrVal = this.parseRegHex(flat.get("cpsr") ?? "0");
+			const cpuMode = cpsrVal & 0x1F;
+			const inAbortMode = cpuMode === 0x17; // Data Abort mode
+			const inPrefetchAbortMode = cpuMode === 0x16; // N/A on most, but check
+			const inUndefinedMode = cpuMode === 0x1B;
+
+			// LR in abort mode = faulting instruction + 8 (data) or +4 (prefetch)
+			const lr = this.parseRegHex(flat.get("lr") ?? flat.get("r14") ?? "0");
+			const abortPC = inAbortMode ? (lr - 8) : (inPrefetchAbortMode ? (lr - 4) : 0);
+
+			if (arch === "cortex-a53-64") {
+				return await this.runAArch64CrashAnalysis(flat, arch);
+			} else {
+				return await this.runAArch32CrashAnalysis(flat, cpsrVal, cpuMode, inAbortMode, abortPC, arch);
+			}
+		} catch {
+			// Crash analysis is best-effort; don't interrupt debugging
+			return undefined;
+		}
+	}
+
+	private async runAArch64CrashAnalysis(flat: Map<string, string>, arch: string): Promise<string | undefined> {
+		const esr = this.findRegValue(flat, ["esr_el1", "esr_el3"]);
+		const far = this.findRegValue(flat, ["far_el1", "far_el3"]);
+		const elr = this.findRegValue(flat, ["elr_el1", "elr_el3"]);
+
+		if (esr === 0 && far === 0 && elr === 0) return undefined;
+
+		const report = decodeAArch64Fault(esr, far, elr);
+		const formatted = formatCrashReport(report, `AArch64 (${arch})`);
+		this.handleMsg("stdout", "\n" + formatted + "\n");
+		return formatted;
+	}
+
+	private async runAArch32CrashAnalysis(
+		flat: Map<string, string>,
+		cpsrVal: number,
+		cpuMode: number,
+		inAbortMode: boolean,
+		abortPC: number,
+		arch: string,
+	): Promise<string | undefined> {
+		// Try CP15 fault registers first
+		let dfsr = this.findRegValue(flat, ["dfsr", "data_fault_status"]);
+		let dfar = this.findRegValue(flat, ["dfar", "data_fault_address"]);
+		let ifsr = this.findRegValue(flat, ["ifsr", "inst_fault_status"]);
+		let ifar = this.findRegValue(flat, ["ifar", "inst_fault_address"]);
+
+		// ── Strategy 4: GDB expression for BSP global variables ──────
+		if (dfsr === 0 && ifsr === 0) {
+			const bspVars = await this.readBspAbortVariables();
+			if (bspVars.faultStatus !== undefined) dfsr = bspVars.faultStatus;
+			if (bspVars.dataAbortAddr !== undefined) dfar = bspVars.dataAbortAddr;
+			if (bspVars.prefetchAbortAddr !== undefined) ifar = bspVars.prefetchAbortAddr;
+		}
+
+		// ── Strategy 5: return mode + LR analysis even if no fault regs
+		const hasFaultRegs = dfsr !== 0 || ifsr !== 0;
+		const hasAbortContext = inAbortMode || abortPC !== 0;
+
+		if (!hasFaultRegs && !hasAbortContext) return undefined;
+
+		const lines: string[] = [];
+		lines.push("═══════════════════════════════════════════════");
+		lines.push("[Crash Analyzer] Exception Detected");
+		lines.push("═══════════════════════════════════════════════");
+
+		// CPSR mode analysis
+		const modeNames: Record<number, string> = {
+			0x10: "User", 0x11: "FIQ", 0x12: "IRQ", 0x13: "Supervisor",
+			0x16: "Monitor", 0x17: "Abort", 0x1B: "Undefined", 0x1F: "System",
+		};
+		const modeName = modeNames[cpuMode] ?? `Unknown (0x${cpuMode.toString(16)})`;
+		lines.push(`CPU Mode:  ${modeName} (CPSR=0x${cpsrVal.toString(16).toUpperCase().padStart(8, "0")})`);
+
+		if (inAbortMode && abortPC !== 0) {
+			lines.push(`Fault PC:  0x${(abortPC >>> 0).toString(16).toUpperCase().padStart(8, "0")}  (LR_abt - 8)`);
+			// Try to resolve symbol
+			if (this.memoryMap) {
+				const annotation = this.memoryMap.annotateAddress(abortPC);
+				if (annotation) lines.push(`           ${annotation}`);
+			}
+		}
+
+		if (hasFaultRegs) {
+			const report = decodeAArch32Fault(dfsr, dfar, ifsr, ifar);
+			lines.push(`Type:      ${report.exceptionType}`);
+			lines.push(`Fault:     ${report.faultType}`);
+			if (report.faultAddress !== undefined) {
+				lines.push(`Address:   0x${report.faultAddress.toString(16).toUpperCase().padStart(8, "0")}`);
+			}
+			lines.push(`Description: ${report.description}`);
+			lines.push("");
+			lines.push("Fault registers:");
+			lines.push(`  DFSR = 0x${dfsr.toString(16).toUpperCase().padStart(8, "0")}`);
+			lines.push(`  DFAR = 0x${dfar.toString(16).toUpperCase().padStart(8, "0")}`);
+			lines.push(`  IFSR = 0x${ifsr.toString(16).toUpperCase().padStart(8, "0")}`);
+			lines.push(`  IFAR = 0x${ifar.toString(16).toUpperCase().padStart(8, "0")}`);
+		} else if (hasAbortContext) {
+			lines.push(`Type:      Data Abort (detected from CPU mode)`);
+			lines.push(`Note:      CP15 fault registers could not be read.`);
+			lines.push(`           BSP handler may have consumed fault state.`);
+			if (dfar !== 0) {
+				lines.push(`Address:   0x${dfar.toString(16).toUpperCase().padStart(8, "0")} (from BSP DataAbortAddr)`);
+			}
+		}
+
+		lines.push(`Architecture: AArch32 (${arch})`);
+		lines.push("═══════════════════════════════════════════════");
+
+		const formatted = lines.join("\n");
+		this.handleMsg("stdout", "\n" + formatted + "\n");
+		return formatted;
+	}
+
+	/**
+	 * Try reading CP15 register groups from XSDB.
+	 * XSDB exposes CP15 registers under group names like "cp", "cp15",
+	 * "sys", or architecture-specific sub-trees.
+	 */
+	private async readCp15Registers(): Promise<Map<string, string>> {
+		const result = new Map<string, string>();
+		if (!this.xsdb) return result;
+
+		// Try several known XSDB register group names for CP15
+		const groupNames = ["cp15", "cp", "sys", "system"];
+		for (const group of groupNames) {
+			try {
+				const output = await this.xsdb.sendCommand(`rrd ${group}`);
+				if (output && !output.includes("error") && !output.includes("no such")) {
+					const { parseRegisters } = await import('./backend/xsdb/xsdb_parse');
+					const entries = parseRegisters(output);
+					this.flattenRegisters(entries, result);
+					if (result.size > 0) break;
+				}
+			} catch {
+				// Group name not available on this target, try next
+			}
+		}
+
+		// Also try reading individual fault registers by name
+		const faultRegNames = [
+			"dfsr", "dfar", "ifsr", "ifar",
+			"DFSR", "DFAR", "IFSR", "IFAR",
+			"data_fault_status", "data_fault_address",
+			"inst_fault_status", "inst_fault_address",
+			"esr_el1", "far_el1", "elr_el1",
+			"esr_el3", "far_el3", "elr_el3",
+		];
+		for (const regName of faultRegNames) {
+			const lower = regName.toLowerCase();
+			if (result.has(lower)) continue; // Already found
+			try {
+				const output = await this.xsdb.sendCommand(`rrd ${regName}`);
+				const parsed = this.parseRrdOutputHex(output);
+				if (parsed !== undefined) {
+					result.set(lower, `0x${parsed.toString(16)}`);
+				}
+			} catch {
+				// Register not available
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Read BSP abort handler variables via GDB expression evaluation.
+	 * The Xilinx BSP asm_vectors.S stores the faulting address in
+	 * global variables before calling the C handler.
+	 */
+	private async readBspAbortVariables(): Promise<{
+		faultStatus?: number;
+		dataAbortAddr?: number;
+		prefetchAbortAddr?: number;
+	}> {
+		const result: {
+			faultStatus?: number;
+			dataAbortAddr?: number;
+			prefetchAbortAddr?: number;
+		} = {};
+
+		// Try reading BSP global variables via GDB
+		const varNames = [
+			{ expr: "(unsigned int)DataAbortAddr", key: "dataAbortAddr" as const },
+			{ expr: "(unsigned int)PrefetchAbortAddr", key: "prefetchAbortAddr" as const },
+		];
+
+		for (const { expr, key } of varNames) {
+			try {
+				const res = await this.miDebugger.evalExpression(JSON.stringify(expr), 0, 0);
+				const val = res.result("value");
+				if (val) {
+					result[key] = this.parseRegHex(val);
+				}
+			} catch {
+				// Variable might not exist
+			}
+		}
+
+		// Try reading FaultStatus local variable (only if DEBUG is defined in BSP)
+		try {
+			const res = await this.miDebugger.evalExpression(JSON.stringify("(unsigned int)FaultStatus"), 0, 0);
+			const val = res.result("value");
+			if (val) {
+				result.faultStatus = this.parseRegHex(val);
+			}
+		} catch {
+			// Variable might not be in scope
+		}
+
+		return result;
+	}
+
+	private findRegValue(flat: Map<string, string>, names: string[]): number {
+		for (const name of names) {
+			const val = flat.get(name.toLowerCase());
+			if (val !== undefined) {
+				const parsed = this.parseRegHex(val);
+				if (parsed !== 0) return parsed;
+			}
+		}
+		// Return zero-valued hit if present (as opposed to not-found)
+		for (const name of names) {
+			const val = flat.get(name.toLowerCase());
+			if (val !== undefined) return this.parseRegHex(val);
+		}
+		return 0;
+	}
+
+	private parseRrdOutputHex(output: string): number | undefined {
+		const lines = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+
+		for (let i = lines.length - 1; i >= 0; i--) {
+			const line = lines[i];
+			const colonMatch = /:\s*(0x[0-9A-Fa-f]+|[0-9A-Fa-f]+)\b/.exec(line);
+			if (colonMatch) {
+				return this.parseRegHex(colonMatch[1]);
+			}
+			const directMatch = /^(0x[0-9A-Fa-f]+|[0-9A-Fa-f]+)$/.exec(line);
+			if (directMatch) {
+				return this.parseRegHex(directMatch[1]);
+			}
+		}
+
+		return undefined;
+	}
+
+	private parseRegHex(value: string): number {
+		const trimmed = value.trim();
+		const match = /^(?:0x)?([0-9A-Fa-f]+)$/.exec(trimmed);
+		if (!match) return 0;
+		return parseInt(match[1], 16);
 	}
 
 	// -- Path substitutions (GDB-specific) ------------------------------

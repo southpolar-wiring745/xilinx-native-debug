@@ -60,6 +60,8 @@ td.ascii { letter-spacing: 1px; user-select: none; }
 	<button id="btnRead">Read</button>
 	<button id="btnRefresh">Refresh</button>
 	<button id="btnWrite">Write Changes</button>
+	<button id="btnExport">Export .bin</button>
+	<button id="btnImport">Import .bin</button>
 </div>
 <div class="hex-container">
 	<table id="hexTable"><tbody></tbody></table>
@@ -75,6 +77,8 @@ td.ascii { letter-spacing: 1px; user-select: none; }
 	const btnRead = document.getElementById('btnRead');
 	const btnRefresh = document.getElementById('btnRefresh');
 	const btnWrite = document.getElementById('btnWrite');
+	const btnExport = document.getElementById('btnExport');
+	const btnImport = document.getElementById('btnImport');
 	const statusEl = document.getElementById('status');
 
 	let currentAddress = 0;
@@ -229,6 +233,23 @@ td.ascii { letter-spacing: 1px; user-select: none; }
 		vscode.postMessage({ type: 'write', address: currentAddress, changes: changes });
 	});
 
+	btnExport.addEventListener('click', function() {
+		if (originalData.length === 0) {
+			setStatus('No data to export. Read memory first.', true);
+			return;
+		}
+		// Merge modifications into data
+		const data = originalData.slice();
+		for (const idx in modifiedData) {
+			data[parseInt(idx)] = modifiedData[idx];
+		}
+		vscode.postMessage({ type: 'export', address: currentAddress, data: data });
+	});
+
+	btnImport.addEventListener('click', function() {
+		vscode.postMessage({ type: 'import', address: currentAddress });
+	});
+
 	// Handle messages from the extension
 	window.addEventListener('message', function(event) {
 		const msg = event.data;
@@ -249,6 +270,13 @@ td.ascii { letter-spacing: 1px; user-select: none; }
 				break;
 			case 'error':
 				setStatus(msg.message, true);
+				break;
+			case 'importData':
+				if (msg.bytes && msg.bytes.length > 0) {
+					renderTable(msg.bytes);
+					inputByteCount.value = msg.bytes.length;
+					setStatus('Imported ' + msg.bytes.length + ' bytes from file');
+				}
 				break;
 			case 'init':
 				if (msg.address !== undefined) {

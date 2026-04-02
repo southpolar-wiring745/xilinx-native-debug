@@ -8,6 +8,47 @@ Versioning].
 [keep a changelog]: https://keepachangelog.com/en/1.0.0
 [semantic versioning]: https://semver.org/spec/v2.0.0.html
 
+## [0.30.0] - 2026-04-02
+
+### Added
+
+- FreeRTOS-aware crash analyzer support in `xsdb-gdb` sessions, including handler-aware analysis for:
+  - `vApplicationAssert`
+  - `vApplicationStackOverflowHook`
+  - `vApplicationMallocFailedHook`
+  - ARM abort/exception handlers used by Xilinx FreeRTOS ports (A9, R5, A53)
+  - MicroBlaze FreeRTOS exception handler register-dump context
+- Extended `XSDB: Run Crash Analyzer` to emit formatted FreeRTOS crash reports when halted inside supported handlers.
+
+### Changed
+
+- `XSDB: Quick Reset`, `XSDB: Reset Processor`, and `XSDB: Reset System` now work without an active debug session by using standalone XSDB fallback.
+- Added support for standalone reset settings:
+  - `xilinx-debug.xsdb.standalonePath`
+  - `xilinx-debug.xsdb.standaloneHwServerUrl`
+
+## [0.29.0] - 2026-04-01
+
+### Added
+
+- Integrated in-extension HDF/XSA parser module under `src/hdf-xsa-parser` for hardware handoff parsing and normalization.
+- New **Xilinx: Project Setup Wizard** webview command to import `.hdf`/`.xsa`, inspect parsed hardware info, and generate project scaffolding.
+- New XSDB memory transfer commands:
+  - `XSDB: Dump Memory to File`
+  - `XSDB: Load Memory from File`
+- Hex editor binary file actions:
+  - `Export .bin`
+  - `Import .bin`
+- New **XSDB: Clock & Power Monitor** panel with platform-aware clock decoding and ZynqMP power-domain status decoding.
+- New optional `crashAnalyzer` launch/attach setting for `xsdb-gdb` to emit ARM fault analysis reports on exception/signal stops.
+
+### Changed
+
+- Root TypeScript build now excludes nested `hdf-xsa-parser` workspace so `npm run vscode:prepublish` compiles only the extension sources.
+- Added extension dependencies required by the integrated parser:
+  - `adm-zip`
+  - `fast-xml-parser`
+
 ## [0.28.0] - 2026-03-27
 
 ### Added
@@ -40,8 +81,6 @@ Versioning].
   hex editor, and quick reset defaults.
 
 #### For details check README_zynq.md
-
-## Unreleased
 
 ### Added
 

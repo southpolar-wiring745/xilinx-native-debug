@@ -3,10 +3,13 @@ import * as net from "net";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import * as cp from "child_process";
 import { SerialTerminalProvider, SerialConfig, detectSerialPorts } from "./serial_terminal";
 import { TelnetTerminalProvider, TelnetConfig } from "./telnet_terminal";
 import { RawTcpTerminalProvider, RawTcpConfig } from "./raw_tcp_terminal";
 import { HexEditorPanel } from "./hex_editor";
+import { ProjectWizardPanel } from "./project_wizard";
+import { ClockPowerPanel } from "./clock_power_panel";
 
 // Active terminal references for disconnect commands
 let activeSerialTerminal: vscode.Terminal | undefined;
@@ -19,6 +22,71 @@ let resetStatusBarItem: vscode.StatusBarItem | undefined;
 let serialStatusBarItem: vscode.StatusBarItem | undefined;
 let telnetStatusBarItem: vscode.StatusBarItem | undefined;
 let tcpStatusBarItem: vscode.StatusBarItem | undefined;
+
+class XilinxToolsItem extends vscode.TreeItem {
+	constructor(
+		label: string,
+		collapsibleState: vscode.TreeItemCollapsibleState,
+		public readonly children: XilinxToolsItem[] = [],
+		commandId?: string,
+		description?: string,
+	) {
+		super(label, collapsibleState);
+		this.description = description;
+		if (commandId) {
+			this.command = { command: commandId, title: label };
+		}
+	}
+}
+
+class XilinxToolsProvider implements vscode.TreeDataProvider<XilinxToolsItem> {
+	private readonly roots: XilinxToolsItem[];
+
+	constructor() {
+		this.roots = [
+			new XilinxToolsItem("Project & Panels", vscode.TreeItemCollapsibleState.Expanded, [
+				new XilinxToolsItem("Project Wizard", vscode.TreeItemCollapsibleState.None, [], "code-debug.projectWizard.open"),
+				new XilinxToolsItem("Hex Memory Editor", vscode.TreeItemCollapsibleState.None, [], "code-debug.hexEditor.open"),
+				new XilinxToolsItem("Clock & Power Monitor", vscode.TreeItemCollapsibleState.None, [], "code-debug.clockPower.open"),
+			]),
+			new XilinxToolsItem("XSDB", vscode.TreeItemCollapsibleState.Expanded, [
+				new XilinxToolsItem("Program FPGA", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.programFPGA"),
+				new XilinxToolsItem("Reset Board", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.resetBoard"),
+				new XilinxToolsItem("Quick Reset", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.quickReset"),
+				new XilinxToolsItem("Reset Processor", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.resetProcessor"),
+				new XilinxToolsItem("Reset System", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.resetSystem"),
+				new XilinxToolsItem("Read Memory", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.readMemory"),
+				new XilinxToolsItem("Write Memory", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.writeMemory"),
+				new XilinxToolsItem("Dump Memory to File", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.dumpMemory"),
+				new XilinxToolsItem("Load Memory from File", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.loadMemory"),
+				new XilinxToolsItem("Run Crash Analyzer", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.runCrashAnalyzer"),
+				new XilinxToolsItem("Send XSDB Command", vscode.TreeItemCollapsibleState.None, [], "code-debug.xsdb.sendCommand"),
+			]),
+			new XilinxToolsItem("Terminals", vscode.TreeItemCollapsibleState.Expanded, [
+				new XilinxToolsItem("UART Connect", vscode.TreeItemCollapsibleState.None, [], "code-debug.serial.connect"),
+				new XilinxToolsItem("UART Disconnect", vscode.TreeItemCollapsibleState.None, [], "code-debug.serial.disconnect"),
+				new XilinxToolsItem("UART Toggle", vscode.TreeItemCollapsibleState.None, [], "code-debug.serial.toggle"),
+				new XilinxToolsItem("Telnet Connect", vscode.TreeItemCollapsibleState.None, [], "code-debug.telnet.connect"),
+				new XilinxToolsItem("Telnet Disconnect", vscode.TreeItemCollapsibleState.None, [], "code-debug.telnet.disconnect"),
+				new XilinxToolsItem("Telnet Toggle", vscode.TreeItemCollapsibleState.None, [], "code-debug.telnet.toggle"),
+				new XilinxToolsItem("TCP Connect", vscode.TreeItemCollapsibleState.None, [], "code-debug.tcp.connect"),
+				new XilinxToolsItem("TCP Disconnect", vscode.TreeItemCollapsibleState.None, [], "code-debug.tcp.disconnect"),
+				new XilinxToolsItem("TCP Toggle", vscode.TreeItemCollapsibleState.None, [], "code-debug.tcp.toggle"),
+			]),
+		];
+	}
+
+	getTreeItem(element: XilinxToolsItem): vscode.TreeItem {
+		return element;
+	}
+
+	getChildren(element?: XilinxToolsItem): Thenable<XilinxToolsItem[]> {
+		if (!element) {
+			return Promise.resolve(this.roots);
+		}
+		return Promise.resolve(element.children);
+	}
+}
 
 export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider("debugmemory", new MemoryContentProvider()));
@@ -48,6 +116,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.readMemory", xsdbReadMemory));
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.writeMemory", xsdbWriteMemory));
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.sendCommand", xsdbSendCommand));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.runCrashAnalyzer", xsdbRunCrashAnalyzer));
 
 	// -- Serial Terminal ------------------------------------------------
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.serial.connect", serialConnect));
@@ -67,10 +136,24 @@ export function activate(context: vscode.ExtensionContext) {
 	// -- Hex Memory Editor ----------------------------------------------
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.hexEditor.open", () => hexEditorOpen(context)));
 
+	// -- Project Setup Wizard -------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.projectWizard.open", () => ProjectWizardPanel.createOrShow(context.extensionUri)));
+
+	// -- Memory Dump/Load -----------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.dumpMemory", xsdbDumpMemory));
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.loadMemory", xsdbLoadMemory));
+
+	// -- Clock & Power Panel --------------------------------------------
+	context.subscriptions.push(vscode.commands.registerCommand("code-debug.clockPower.open", () => ClockPowerPanel.createOrShow(context.extensionUri)));
+
 	// -- Quick Reset Buttons --------------------------------------------
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.quickReset", xsdbQuickReset));
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.resetProcessor", () => xsdbQuickResetTyped("processor")));
 	context.subscriptions.push(vscode.commands.registerCommand("code-debug.xsdb.resetSystem", () => xsdbQuickResetTyped("system")));
+
+	// -- Activity Bar Tools View ----------------------------------------
+	const toolsProvider = new XilinxToolsProvider();
+	context.subscriptions.push(vscode.window.createTreeView("xilinxDebugView", { treeDataProvider: toolsProvider }));
 
 	// -- Reset Status Bar Item ------------------------------------------
 	resetStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
@@ -298,8 +381,6 @@ async function xsdbProgramFPGA() {
 }
 
 async function xsdbResetBoard() {
-	const session = getActiveXsdbSession();
-	if (!session) return;
 	const pick = await vscode.window.showQuickPick(
 		[
 			{ label: "processor", description: "Reset processor only" },
@@ -309,7 +390,7 @@ async function xsdbResetBoard() {
 	);
 	if (!pick) return;
 	try {
-		await session.customRequest("xsdb-resetBoard", { resetType: pick.label as "processor" | "system" });
+		await performBoardReset(pick.label as "processor" | "system");
 		vscode.window.showInformationMessage(`Board reset (${pick.label}) complete.`);
 	} catch (err) {
 		vscode.window.showErrorMessage(`Board reset failed: ${err}`);
@@ -387,6 +468,83 @@ async function xsdbSendCommand() {
 		channel.show();
 	} catch (err) {
 		vscode.window.showErrorMessage(`XSDB command failed: ${err}`);
+	}
+}
+
+async function xsdbRunCrashAnalyzer() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+	try {
+		const result = await session.customRequest("xsdb-runCrashAnalyzer");
+		if (result?.report) {
+			const channel = vscode.window.createOutputChannel("XSDB Crash Analyzer");
+			channel.clear();
+			channel.appendLine(result.report);
+			channel.show();
+		} else {
+			vscode.window.showWarningMessage(result?.note || "Crash analyzer did not find fault register data.");
+		}
+	} catch (err) {
+		vscode.window.showErrorMessage(`Crash analyzer failed: ${err}`);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Memory Dump / Load commands
+// ---------------------------------------------------------------------------
+
+async function xsdbDumpMemory() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+
+	const addrStr = await vscode.window.showInputBox({ prompt: "Start address (hex, e.g. 0x00100000)" });
+	if (!addrStr) return;
+	const address = parseInt(addrStr, 16);
+	if (isNaN(address)) { vscode.window.showErrorMessage("Invalid address"); return; }
+
+	const sizeStr = await vscode.window.showInputBox({ prompt: "Number of bytes to dump", value: "4096" });
+	if (!sizeStr) return;
+	const byteCount = parseInt(sizeStr, 10);
+	if (isNaN(byteCount) || byteCount <= 0) { vscode.window.showErrorMessage("Invalid byte count"); return; }
+
+	const uri = await vscode.window.showSaveDialog({
+		filters: { "Binary files": ["bin"], "All files": ["*"] },
+		defaultUri: vscode.Uri.file(`memory_dump_${addrStr}.bin`),
+	});
+	if (!uri) return;
+
+	try {
+		const result = await session.customRequest("xsdb-dumpMemory", { address, byteCount });
+		const buffer = Buffer.from(result.data);
+		await vscode.workspace.fs.writeFile(uri, buffer);
+		vscode.window.showInformationMessage(`Dumped ${buffer.length} bytes to ${uri.fsPath}`);
+	} catch (err) {
+		vscode.window.showErrorMessage(`Memory dump failed: ${err}`);
+	}
+}
+
+async function xsdbLoadMemory() {
+	const session = getActiveXsdbSession();
+	if (!session) return;
+
+	const files = await vscode.window.showOpenDialog({
+		canSelectMany: false,
+		filters: { "Binary files": ["bin"], "All files": ["*"] },
+	});
+	if (!files || files.length === 0) return;
+
+	const addrStr = await vscode.window.showInputBox({ prompt: "Target address (hex, e.g. 0x00100000)" });
+	if (!addrStr) return;
+	const address = parseInt(addrStr, 16);
+	if (isNaN(address)) { vscode.window.showErrorMessage("Invalid address"); return; }
+
+	try {
+		const fileData = await vscode.workspace.fs.readFile(files[0]);
+		const data = Array.from(fileData);
+		await session.customRequest("xsdb-loadMemory", { address, data });
+		vscode.window.showInformationMessage(`Loaded ${data.length} bytes to 0x${address.toString(16)}`);
+	} catch (err) {
+		vscode.window.showErrorMessage(`Memory load failed: ${err}`);
 	}
 }
 
@@ -655,15 +813,12 @@ async function hexEditorOpen(context: vscode.ExtensionContext) {
 // ---------------------------------------------------------------------------
 
 async function xsdbQuickReset() {
-	const session = getActiveXsdbSession();
-	if (!session) return;
-
 	// Check launch config or workspace setting for default reset type
 	const config = vscode.workspace.getConfiguration("xilinx-debug");
-	const resetType = config.get<string>("xsdb.defaultResetType") || "processor";
+	const resetType = (config.get<string>("xsdb.defaultResetType") || "processor") as "processor" | "system";
 
 	try {
-		await session.customRequest("xsdb-resetBoard", { resetType });
+		await performBoardReset(resetType);
 		vscode.window.showInformationMessage(`Board reset (${resetType}) complete.`);
 	} catch (err) {
 		vscode.window.showErrorMessage(`Board reset failed: ${err}`);
@@ -671,14 +826,81 @@ async function xsdbQuickReset() {
 }
 
 async function xsdbQuickResetTyped(resetType: "processor" | "system") {
-	const session = getActiveXsdbSession();
-	if (!session) return;
-
 	try {
-		await session.customRequest("xsdb-resetBoard", { resetType });
+		await performBoardReset(resetType);
 		vscode.window.showInformationMessage(`Board reset (${resetType}) complete.`);
 	} catch (err) {
 		vscode.window.showErrorMessage(`Board reset failed: ${err}`);
+	}
+}
+
+async function performBoardReset(resetType: "processor" | "system"): Promise<void> {
+	const active = vscode.debug.activeDebugSession;
+	if (active && active.type === "xsdb-gdb") {
+		await active.customRequest("xsdb-resetBoard", { resetType });
+		return;
+	}
+
+	await runStandaloneXsdbReset(resetType);
+}
+
+async function runStandaloneXsdbReset(resetType: "processor" | "system"): Promise<void> {
+	const config = vscode.workspace.getConfiguration("xilinx-debug");
+	const configuredPath = (config.get<string>("xsdb.standalonePath") || "").trim();
+	const xsdbPath = configuredPath || "xsdb";
+	let hwServerUrl = (config.get<string>("xsdb.standaloneHwServerUrl") || "").trim();
+
+	if (!hwServerUrl) {
+		hwServerUrl = (await vscode.window.showInputBox({
+			prompt: "hw_server URL for standalone reset (leave empty for local default)",
+			placeHolder: "tcp:127.0.0.1:3121",
+			value: "",
+		}))?.trim() || "";
+	}
+
+	const commandLines = [
+		hwServerUrl ? `connect -url ${hwServerUrl}` : "connect",
+		`rst -${resetType}`,
+		"disconnect",
+		"exit",
+	];
+
+	const output = await new Promise<string>((resolve, reject) => {
+		const child = cp.spawn(xsdbPath, ["-interactive"], {
+			shell: true,
+		});
+
+		let stdout = "";
+		let stderr = "";
+		const timer = setTimeout(() => {
+			child.kill();
+			reject(new Error("Standalone XSDB reset timed out"));
+		}, 20000);
+
+		child.stdout.on("data", d => { stdout += d.toString(); });
+		child.stderr.on("data", d => { stderr += d.toString(); });
+		child.on("error", err => {
+			clearTimeout(timer);
+			reject(err);
+		});
+		child.on("close", (code) => {
+			clearTimeout(timer);
+			const combined = `${stdout}\n${stderr}`.trim();
+			if (code !== 0) {
+				reject(new Error(combined || `xsdb exited with code ${code}`));
+				return;
+			}
+			resolve(combined);
+		});
+
+		for (const line of commandLines) {
+			child.stdin.write(line + "\n");
+		}
+		child.stdin.end();
+	});
+
+	if (/\berror:\b/i.test(output)) {
+		throw new Error(output);
 	}
 }
 

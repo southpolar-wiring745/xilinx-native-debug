@@ -90,6 +90,12 @@ export class HexEditorPanel {
 					case "write":
 						await this.handleWrite(msg.address, msg.changes);
 						break;
+					case "export":
+						await this.handleExport(msg.address, msg.data);
+						break;
+					case "import":
+						await this.handleImport(msg.address);
+						break;
 				}
 			},
 			null,
@@ -209,6 +215,38 @@ export class HexEditorPanel {
 				success: false,
 				error: String(err),
 			});
+		}
+	}
+
+	private async handleExport(address: number, data: number[]): Promise<void> {
+		const uri = await vscode.window.showSaveDialog({
+			filters: { "Binary files": ["bin"], "All files": ["*"] },
+			defaultUri: vscode.Uri.file(`memory_0x${address.toString(16)}.bin`),
+		});
+		if (!uri) return;
+		try {
+			await vscode.workspace.fs.writeFile(uri, Buffer.from(data));
+			vscode.window.showInformationMessage(`Exported ${data.length} bytes to ${uri.fsPath}`);
+		} catch (err) {
+			this.panel.webview.postMessage({ type: "error", message: `Export failed: ${err}` });
+		}
+	}
+
+	private async handleImport(address: number): Promise<void> {
+		const files = await vscode.window.showOpenDialog({
+			canSelectMany: false,
+			filters: { "Binary files": ["bin"], "All files": ["*"] },
+		});
+		if (!files || files.length === 0) return;
+		try {
+			const fileData = await vscode.workspace.fs.readFile(files[0]);
+			this.panel.webview.postMessage({
+				type: "importData",
+				address,
+				bytes: Array.from(fileData),
+			});
+		} catch (err) {
+			this.panel.webview.postMessage({ type: "error", message: `Import failed: ${err}` });
 		}
 	}
 

@@ -8,3 +8,4 @@ node_modules
 *.tcl
 *.prompt.md
 registers/
+freertos_ports/

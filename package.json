@@ -15,7 +15,7 @@
 		"microblaze"
 	],
 	"license": "public domain",
-	"version": "0.28.0",
+	"version": "0.30.0",
 	"publisher": "1nv4510n",
 	"author": "1nv4510n",
 	"icon": "images/icon.png",
@@ -33,6 +33,7 @@
 		"onCommand:code-debug.xsdb.readMemory",
 		"onCommand:code-debug.xsdb.writeMemory",
 		"onCommand:code-debug.xsdb.sendCommand",
+		"onCommand:code-debug.xsdb.runCrashAnalyzer",
 		"onCommand:code-debug.serial.connect",
 		"onCommand:code-debug.serial.disconnect",
 		"onCommand:code-debug.serial.toggle",
@@ -45,7 +46,12 @@
 		"onCommand:code-debug.hexEditor.open",
 		"onCommand:code-debug.xsdb.quickReset",
 		"onCommand:code-debug.xsdb.resetProcessor",
-		"onCommand:code-debug.xsdb.resetSystem"
+		"onCommand:code-debug.xsdb.resetSystem",
+		"onCommand:code-debug.projectWizard.open",
+		"onCommand:code-debug.xsdb.dumpMemory",
+		"onCommand:code-debug.xsdb.loadMemory",
+		"onCommand:code-debug.clockPower.open",
+		"onView:xilinxDebugView"
 	],
 	"categories": [
 		"Debuggers"
@@ -84,6 +90,10 @@
 			{
 				"command": "code-debug.xsdb.sendCommand",
 				"title": "XSDB: Send Command"
+			},
+			{
+				"command": "code-debug.xsdb.runCrashAnalyzer",
+				"title": "XSDB: Run Crash Analyzer"
 			},
 			{
 				"command": "code-debug.serial.connect",
@@ -139,8 +149,41 @@
 				"command": "code-debug.xsdb.resetSystem",
 				"title": "XSDB: Reset System",
 				"icon": "$(debug-restart)"
+			},
+			{
+				"command": "code-debug.projectWizard.open",
+				"title": "Xilinx: Project Setup Wizard"
+			},
+			{
+				"command": "code-debug.xsdb.dumpMemory",
+				"title": "XSDB: Dump Memory to File"
+			},
+			{
+				"command": "code-debug.xsdb.loadMemory",
+				"title": "XSDB: Load Memory from File"
+			},
+			{
+				"command": "code-debug.clockPower.open",
+				"title": "XSDB: Clock & Power Monitor"
 			}
 		],
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "xilinxDebug",
+					"title": "Xilinx Debug",
+					"icon": "$(chip)"
+				}
+			]
+		},
+		"views": {
+			"xilinxDebug": [
+				{
+					"id": "xilinxDebugView",
+					"name": "Tools"
+				}
+			]
+		},
 		"breakpoints": [
 			{
 				"language": "c"
@@ -1465,6 +1508,11 @@
 								"type": "boolean",
 								"description": "Record XSDB command trace with timestamps and latency (view with 'xsdb: trace' in debug console)",
 								"default": false
+							},
+							"crashAnalyzer": {
+								"type": "boolean",
+								"description": "Enable automatic ARM fault analysis on crash/exception stops (reads DFSR/DFAR/IFSR/IFAR or ESR_ELx/FAR_ELx)",
+								"default": true
 							}
 						}
 					},
@@ -1690,6 +1738,11 @@
 								"type": "boolean",
 								"description": "Record XSDB command trace with timestamps and latency (view with 'xsdb: trace' in debug console)",
 								"default": false
+							},
+							"crashAnalyzer": {
+								"type": "boolean",
+								"description": "Enable automatic ARM fault analysis on crash/exception stops (reads DFSR/DFAR/IFSR/IFAR or ESR_ELx/FAR_ELx)",
+								"default": true
 							}
 						}
 					}
@@ -1828,6 +1881,10 @@
 				{
 					"command": "code-debug.xsdb.resetSystem",
 					"when": "debugType == 'xsdb-gdb'"
+				},
+				{
+					"command": "code-debug.xsdb.runCrashAnalyzer",
+					"when": "debugType == 'xsdb-gdb'"
 				}
 			]
 		},
@@ -1908,12 +1965,15 @@
 		"prettier-check-docs": "prettier --check **/*.md"
 	},
 	"dependencies": {
+		"adm-zip": "^0.5.10",
+		"fast-xml-parser": "^4.3.0",
 		"ssh2": "^1.6.0",
 		"vscode-debugadapter": "^1.45.0",
 		"vscode-debugprotocol": "^1.45.0"
 	},
 	"devDependencies": {
 		"@istanbuljs/nyc-config-typescript": "^1.0.2",
+		"@types/adm-zip": "^0.5.0",
 		"@types/mocha": "^5.2.6",
 		"@types/node": "^11.11.3",
 		"@types/ssh2": "^1.15.0",

@@ -42,8 +42,13 @@ The main Xilinx workflow is provided by the `xsdb-gdb` debugger type:
 - target selection by filter or JTAG cable name
 - runtime XSDB commands from the VS Code Debug Console using `xsdb:`
 - XSDB memory read/write commands from the Command Palette
+- XSDB memory dump/load (`.bin`) commands from the Command Palette
 - board reset commands from the Command Palette
+- clock and power status monitor panel (Zynq-7000/ZynqMP, Versal stub)
+- hardware handoff project setup wizard from `.hdf`/`.xsa`
 - optional XSDB command tracing
+- optional automatic crash analyzer for ARM fault registers
+- FreeRTOS-aware crash analyzer for assert hooks and fatal handlers across Zynq-7000, ZynqMP (A53/R5), and MicroBlaze ports
 
 ### Debug UX features
 
@@ -172,6 +177,7 @@ Use for Mago-MI workflows on supported Windows targets.
 - `freertosAwareness`
 - `mapFilePath`
 - `xsdbTraceCommands`
+- `crashAnalyzer`
 
 Full Xilinx-focused details and recipes are in `README_zynq.md`.
 
@@ -195,10 +201,15 @@ MI commands for the backend debugger can still be sent with `-`.
 - XSDB: Read Memory
 - XSDB: Write Memory
 - XSDB: Send Command
+- XSDB: Run Crash Analyzer
+- XSDB: Dump Memory to File
+- XSDB: Load Memory from File
 - XSDB: Quick Reset
 - XSDB: Reset Processor
 - XSDB: Reset System
 - XSDB: Hex Memory Editor
+- XSDB: Clock & Power Monitor
+- Xilinx: Project Setup Wizard
 - UART: Connect Serial Terminal
 - UART: Disconnect Serial Terminal
 - UART: Toggle Connect/Disconnect
@@ -296,9 +307,32 @@ A read/write hex memory editor webview for inspecting and modifying memory durin
    - Click any byte to edit it (modified bytes are highlighted)
    - **Write** button to commit changes via XSDB
    - **Refresh** button to re-read the range
+  - **Export .bin** button to save current buffer
+  - **Import .bin** button to load bytes into the editor buffer
    - **Go to address** and byte count inputs for navigation
 
 Requires an active `xsdb-gdb` debug session.
+
+## Project Setup Wizard
+
+Create a starter debug project from hardware handoff files.
+
+### Usage
+
+1. Run **Xilinx: Project Setup Wizard** from the Command Palette
+2. Import an `.hdf` or `.xsa` file
+3. Review generated launch and peripheral settings
+4. Generate project scaffolding (`hw_platform`, `src`, `include`, `.vscode`)
+
+## Clock & Power Monitor
+
+Live clock tree and power-domain snapshot from XSDB register reads.
+
+### Usage
+
+1. Start an `xsdb-gdb` debug session
+2. Run **XSDB: Clock & Power Monitor**
+3. Use **Refresh** in the panel to fetch current values
 
 ### Configuration
 
@@ -308,7 +342,7 @@ Requires an active `xsdb-gdb` debug session.
 
 ## Quick Board Reset
 
-Quick reset buttons that appear during an active `xsdb-gdb` debug session:
+Quick reset buttons can be used during an active `xsdb-gdb` debug session, and also work without an active session via standalone XSDB fallback.
 
 - **Status bar item**: A `$(debug-restart) Reset Board` button appears in the status bar during `xsdb-gdb` sessions
 - **Debug toolbar**: A reset button appears in the debug toolbar
@@ -321,6 +355,23 @@ The quick reset uses the configured `xilinx-debug.xsdb.defaultResetType` setting
 | Setting | Default | Description |
 |---|---|---|
 | `xilinx-debug.xsdb.defaultResetType` | `"processor"` | Default reset type for quick reset: processor or system |
+| `xilinx-debug.xsdb.standalonePath` | `""` | Optional standalone `xsdb` executable path used when no debug session is active |
+| `xilinx-debug.xsdb.standaloneHwServerUrl` | `""` | Optional standalone `hw_server` URL (for example `tcp:127.0.0.1:3121`) |
+
+## FreeRTOS Crash Analyzer
+
+The crash analyzer now detects FreeRTOS fatal-stop contexts and reports handler-specific details in addition to raw fault registers.
+
+### Supported FreeRTOS/BSP stop points
+
+- `vApplicationAssert` (assert file and line)
+- `vApplicationStackOverflowHook` (task context)
+- `vApplicationMallocFailedHook`
+- Data/prefetch/undefined abort handlers (`Xil_*` / FreeRTOS vector handlers)
+- AArch64 synchronous/SError handlers on Cortex-A53
+- MicroBlaze `vPortExceptionHandler` register-dump context
+
+Use **XSDB: Run Crash Analyzer** while halted in a handler to generate a formatted report in the **XSDB Crash Analyzer** output channel.
 
 ## Recommended attach behavior
 
